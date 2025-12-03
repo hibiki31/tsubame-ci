@@ -1,0 +1,25 @@
+# FastAPI と依存関係
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# データベース
+sqlalchemy>=2.0.23
+asyncpg>=0.29.0
+alembic>=1.13.0
+
+# SSH クライアント
+asyncssh>=2.14.0
+
+# セキュリティ
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+cryptography>=41.0.0
+python-multipart>=0.0.6
+
+# CORS
+python-dotenv>=1.0.0
+
+# WebSocket
+websockets>=12.0
