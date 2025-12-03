@@ -44,21 +44,18 @@ services:
     networks:
       - tsubame-network
 
-  # フロントエンド（将来実装）
-  # frontend:
-  #   build:
-  #     context: ./frontend
-  #     dockerfile: Dockerfile
-  #   container_name: tsubame-ci-frontend
-  #   ports:
-  #     - "3000:3000"
-  #   depends_on:
-  #     - backend
-  #   volumes:
-  #     - ./frontend:/app
-  #     - /app/node_modules
-  #   networks:
-  #     - tsubame-network
+  # フロントエンド（Vue3 + Vuetify3）
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: tsubame-ci-frontend
+    ports:
+      - "8888:80"
+    depends_on:
+      - backend
+    networks:
+      - tsubame-network
 
 volumes:
   postgres_data:
