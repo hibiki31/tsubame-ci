@@ -1,142 +1,231 @@
 <template>
   <div>
-    <div class="d-flex justify-space-between align-center mb-6">
-      <h1 class="text-h4">ジョブ管理</h1>
-      <v-btn color="primary" prepend-icon="mdi-plus" @click="openCreateDialog">
-        ジョブ追加
-      </v-btn>
-    </div>
+    <AppPageHeader
+      eyebrow="Automation"
+      icon="mdi-script-text-outline"
+      title="ジョブ管理"
+      description="繰り返し実行するシェルスクリプトを、接続先ごとに整理します。"
+    >
+      <template #actions>
+        <v-btn color="primary" prepend-icon="mdi-plus" @click="openCreateDialog">ジョブを追加</v-btn>
+      </template>
+    </AppPageHeader>
 
-    <!-- ジョブ一覧 -->
-    <v-row>
-      <v-col v-for="job in jobs" :key="job.id" cols="12" md="6" lg="4">
-        <v-card>
-          <v-card-title>{{ job.name }}</v-card-title>
-          <v-card-subtitle>
-            <v-icon size="small" class="mr-1">mdi-server</v-icon>
-            {{ job.server?.name }}
-          </v-card-subtitle>
-          <v-card-text>
-            <p v-if="job.description" class="text-body-2 mb-2">
-              {{ job.description }}
-            </p>
-            <div class="text-caption text-grey">
-              作成日: {{ formatDate(job.created_at) }}
+    <v-alert
+      v-if="loadError"
+      class="mb-6"
+      closable
+      color="error"
+      icon="mdi-alert-circle-outline"
+      title="ジョブ情報を取得できませんでした"
+      variant="tonal"
+      @click:close="clearErrors"
+    >
+      {{ loadError }}
+    </v-alert>
+
+    <v-row v-if="loading && jobs.length === 0" class="job-grid">
+      <v-col v-for="index in 3" :key="index" cols="12" md="6" xl="4">
+        <v-skeleton-loader class="panel-card" type="heading, paragraph, actions" />
+      </v-col>
+    </v-row>
+
+    <v-row v-else-if="jobs.length > 0" class="job-grid">
+      <v-col v-for="job in jobs" :key="job.id" cols="12" md="6" xl="4">
+        <v-card class="job-card panel-card" height="100%">
+          <v-card-text class="job-card__body">
+            <div class="job-card__heading">
+              <div class="job-card__mark" aria-hidden="true">
+                <v-icon icon="mdi-console-line" size="21" />
+              </div>
+              <v-chip size="x-small" variant="tonal">ID {{ job.id }}</v-chip>
+            </div>
+
+            <h2 class="job-card__title">{{ job.name }}</h2>
+            <p class="job-card__description">{{ job.description || 'このジョブには説明がありません。' }}</p>
+
+            <div class="job-card__meta">
+              <div class="job-card__meta-item">
+                <v-icon icon="mdi-server-outline" size="17" />
+                <div>
+                  <span>実行サーバ</span>
+                  <strong>{{ job.server?.name || `サーバ #${job.server_id}` }}</strong>
+                </div>
+              </div>
+              <div class="job-card__meta-item">
+                <v-icon icon="mdi-calendar-blank-outline" size="17" />
+                <div>
+                  <span>登録日</span>
+                  <strong>{{ formatDate(job.created_at) }}</strong>
+                </div>
+              </div>
             </div>
           </v-card-text>
-          <v-card-actions>
-            <v-btn
-              color="success"
-              prepend-icon="mdi-play"
-              size="small"
-              @click="executeJob(job)"
-            >
+
+          <v-divider />
+          <v-card-actions class="job-card__actions">
+            <v-btn color="success" prepend-icon="mdi-play" size="small" variant="tonal" @click="executeJob(job)">
               実行
             </v-btn>
-            <v-spacer></v-spacer>
+            <v-spacer />
             <v-btn
-              icon="mdi-eye"
+              :aria-label="`${job.name}の詳細を見る`"
+              class="icon-action"
+              icon="mdi-arrow-top-right"
               size="small"
               variant="text"
               :to="`/jobs/${job.id}`"
-            ></v-btn>
+            />
             <v-btn
-              icon="mdi-pencil"
+              :aria-label="`${job.name}を編集`"
+              class="icon-action"
+              icon="mdi-pencil-outline"
               size="small"
               variant="text"
               @click="openEditDialog(job)"
-            ></v-btn>
+            />
             <v-btn
-              icon="mdi-delete"
+              :aria-label="`${job.name}を削除`"
+              color="error"
+              icon="mdi-trash-can-outline"
               size="small"
               variant="text"
-              color="error"
               @click="confirmDelete(job)"
-            ></v-btn>
+            />
           </v-card-actions>
         </v-card>
       </v-col>
     </v-row>
 
-    <!-- ジョブ作成/編集ダイアログ -->
-    <v-dialog v-model="dialog" max-width="800px">
-      <v-card>
-        <v-card-title>
-          {{ editMode ? 'ジョブ編集' : 'ジョブ追加' }}
-        </v-card-title>
+    <v-card v-else class="panel-card">
+      <v-empty-state
+        class="empty-state"
+        icon="mdi-script-text-key-outline"
+        title="ジョブがまだありません"
+        text="サーバを選び、最初のシェルスクリプトを登録しましょう。"
+      >
+        <template #actions>
+          <v-btn color="primary" prepend-icon="mdi-plus" @click="openCreateDialog">ジョブを追加</v-btn>
+        </template>
+      </v-empty-state>
+    </v-card>
+
+    <v-dialog v-model="dialog" max-width="820">
+      <v-card class="dialog-card">
+        <v-card-title>{{ editMode ? 'ジョブを編集' : 'ジョブを追加' }}</v-card-title>
+        <v-card-subtitle>実行先とシェルスクリプトを設定してください。</v-card-subtitle>
+        <v-divider />
         <v-card-text>
-          <v-form ref="formRef">
-            <v-text-field
-              v-model="form.name"
-              label="ジョブ名"
-              :rules="[rules.required]"
-              required
-            ></v-text-field>
+          <v-alert
+            v-if="servers.length === 0"
+            class="mb-5"
+            color="warning"
+            icon="mdi-server-off"
+            variant="tonal"
+          >
+            先に実行先サーバを登録してください。
+            <template #append>
+              <v-btn size="small" to="/servers" variant="text" @click="dialog = false">サーバ管理へ</v-btn>
+            </template>
+          </v-alert>
 
-            <v-textarea
-              v-model="form.description"
-              label="説明"
-              rows="2"
-            ></v-textarea>
+          <v-form ref="formRef" @submit.prevent="saveJob">
+            <div class="form-grid">
+              <v-text-field
+                v-model="form.name"
+                label="ジョブ名"
+                placeholder="Deploy frontend"
+                :rules="[rules.required]"
+                required
+              />
 
-            <v-select
-              v-model="form.server_id"
-              label="実行サーバ"
-              :items="serverOptions"
-              :rules="[rules.required]"
-              required
-            ></v-select>
+              <v-select
+                v-model="form.server_id"
+                label="実行サーバ"
+                :items="serverOptions"
+                :rules="[rules.required]"
+                required
+              />
 
-            <v-textarea
-              v-model="form.script"
-              label="スクリプト"
-              rows="10"
-              :rules="[rules.required]"
-              required
-              placeholder="#!/bin/bash&#10;echo 'Hello, World!'"
-            ></v-textarea>
+              <v-textarea
+                v-model="form.description"
+                class="form-grid__wide"
+                label="説明（任意）"
+                placeholder="ジョブの目的や実行時の注意事項"
+                rows="2"
+              />
+
+              <v-textarea
+                v-model="form.script"
+                auto-grow
+                class="form-grid__wide script-field"
+                hint="実行前に内容と対象サーバを確認してください"
+                label="シェルスクリプト"
+                persistent-hint
+                placeholder="#!/bin/bash&#10;set -euo pipefail&#10;echo 'Hello, World!'"
+                rows="11"
+                :rules="[rules.required]"
+                required
+              />
+            </div>
           </v-form>
         </v-card-text>
         <v-card-actions>
-          <v-spacer></v-spacer>
-          <v-btn @click="dialog = false">キャンセル</v-btn>
-          <v-btn color="primary" @click="saveJob" :loading="saving">
+          <v-spacer />
+          <v-btn variant="text" @click="dialog = false">キャンセル</v-btn>
+          <v-btn
+            color="primary"
+            :disabled="servers.length === 0"
+            prepend-icon="mdi-content-save-outline"
+            :loading="saving"
+            @click="saveJob"
+          >
             保存
           </v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
 
-    <!-- 削除確認ダイアログ -->
-    <v-dialog v-model="deleteDialog" max-width="400px">
-      <v-card>
-        <v-card-title>ジョブの削除</v-card-title>
+    <v-dialog v-model="deleteDialog" max-width="460">
+      <v-card class="dialog-card">
+        <v-card-title>ジョブを削除しますか？</v-card-title>
+        <v-card-subtitle>登録したスクリプトが削除されます。</v-card-subtitle>
         <v-card-text>
-          本当に「{{ deleteTarget?.name }}」を削除しますか？
+          <v-alert color="error" icon="mdi-alert-outline" variant="tonal">
+            「{{ deleteTarget?.name }}」を削除します。この操作は取り消せません。
+          </v-alert>
         </v-card-text>
         <v-card-actions>
-          <v-spacer></v-spacer>
-          <v-btn @click="deleteDialog = false">キャンセル</v-btn>
-          <v-btn color="error" @click="deleteJob" :loading="deleting">
+          <v-spacer />
+          <v-btn variant="text" @click="deleteDialog = false">キャンセル</v-btn>
+          <v-btn color="error" prepend-icon="mdi-trash-can-outline" :loading="deleting" @click="deleteJob">
             削除
           </v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
 
-    <!-- 実行確認ダイアログ -->
-    <v-dialog v-model="executeDialog" max-width="400px">
-      <v-card>
-        <v-card-title>ジョブの実行</v-card-title>
+    <v-dialog v-model="executeDialog" max-width="500">
+      <v-card class="dialog-card">
+        <v-card-title>ジョブを実行しますか？</v-card-title>
+        <v-card-subtitle>対象サーバとジョブ名を確認してください。</v-card-subtitle>
         <v-card-text>
-          「{{ executeTarget?.name }}」を実行しますか？
+          <div class="execute-summary">
+            <div>
+              <span>ジョブ</span>
+              <strong>{{ executeTarget?.name }}</strong>
+            </div>
+            <v-icon icon="mdi-arrow-right" color="secondary" />
+            <div>
+              <span>実行サーバ</span>
+              <strong>{{ executeTarget?.server?.name || `サーバ #${executeTarget?.server_id}` }}</strong>
+            </div>
+          </div>
         </v-card-text>
         <v-card-actions>
-          <v-spacer></v-spacer>
-          <v-btn @click="executeDialog = false">キャンセル</v-btn>
-          <v-btn color="success" @click="confirmExecute" :loading="executing">
-            実行
-          </v-btn>
+          <v-spacer />
+          <v-btn variant="text" @click="executeDialog = false">キャンセル</v-btn>
+          <v-btn color="success" prepend-icon="mdi-play" :loading="executing" @click="confirmExecute">実行</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -146,6 +235,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import AppPageHeader from '@/components/AppPageHeader.vue'
 import { useJobStore } from '@/stores/job'
 import { useServerStore } from '@/stores/server'
 import type { JobWithServer, JobCreate, JobUpdate } from '@/types'
@@ -156,6 +246,8 @@ const serverStore = useServerStore()
 
 const jobs = computed(() => jobStore.jobs)
 const servers = computed(() => serverStore.servers)
+const loading = computed(() => jobStore.loading || serverStore.loading)
+const loadError = computed(() => jobStore.error || serverStore.error)
 
 const dialog = ref(false)
 const deleteDialog = ref(false)
@@ -167,34 +259,30 @@ const executing = ref(false)
 const deleteTarget = ref<JobWithServer | null>(null)
 const executeTarget = ref<JobWithServer | null>(null)
 const formRef = ref()
+const currentJobId = ref<number | null>(null)
 
-// フォームデータ
 const form = ref({
   name: '',
   description: '',
   script: '',
-  server_id: 0
+  server_id: 0,
 })
 
-const currentJobId = ref<number | null>(null)
+const serverOptions = computed(() => servers.value.map((server) => ({ title: server.name, value: server.id })))
 
-// サーバ選択肢
-const serverOptions = computed(() => 
-  servers.value.map(s => ({ title: s.name, value: s.id }))
-)
-
-// バリデーションルール
 const rules = {
-  required: (v: any) => !!v || '必須項目です'
+  required: (value: unknown) => !!value || '必須項目です',
 }
 
-// 日付フォーマット
+function clearErrors() {
+  jobStore.clearError()
+  serverStore.clearError()
+}
+
 function formatDate(dateString: string): string {
-  const date = new Date(dateString)
-  return date.toLocaleDateString('ja-JP')
+  return new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium' }).format(new Date(dateString))
 }
 
-// ダイアログを開く（新規作成）
 function openCreateDialog() {
   editMode.value = false
   currentJobId.value = null
@@ -202,7 +290,6 @@ function openCreateDialog() {
   dialog.value = true
 }
 
-// ダイアログを開く（編集）
 function openEditDialog(job: JobWithServer) {
   editMode.value = true
   currentJobId.value = job.id
@@ -210,22 +297,20 @@ function openEditDialog(job: JobWithServer) {
     name: job.name,
     description: job.description || '',
     script: job.script,
-    server_id: job.server_id
+    server_id: job.server_id,
   }
   dialog.value = true
 }
 
-// フォームリセット
 function resetForm() {
   form.value = {
     name: '',
     description: '',
     script: '',
-    server_id: 0
+    server_id: 0,
   }
 }
 
-// ジョブ保存
 async function saveJob() {
   const { valid } = await formRef.value.validate()
   if (!valid) return
@@ -233,21 +318,19 @@ async function saveJob() {
   saving.value = true
   try {
     if (editMode.value && currentJobId.value) {
-      // 更新
       const updateData: JobUpdate = {
         name: form.value.name,
         description: form.value.description || undefined,
         script: form.value.script,
-        server_id: form.value.server_id
+        server_id: form.value.server_id,
       }
       await jobStore.updateJob(currentJobId.value, updateData)
     } else {
-      // 新規作成
       const createData: JobCreate = {
         name: form.value.name,
         description: form.value.description || undefined,
         script: form.value.script,
-        server_id: form.value.server_id
+        server_id: form.value.server_id,
       }
       await jobStore.createJob(createData)
     }
@@ -260,13 +343,11 @@ async function saveJob() {
   }
 }
 
-// 削除確認
 function confirmDelete(job: JobWithServer) {
   deleteTarget.value = job
   deleteDialog.value = true
 }
 
-// ジョブ削除
 async function deleteJob() {
   if (!deleteTarget.value) return
 
@@ -282,13 +363,11 @@ async function deleteJob() {
   }
 }
 
-// ジョブ実行確認
 function executeJob(job: JobWithServer) {
   executeTarget.value = job
   executeDialog.value = true
 }
 
-// ジョブ実行
 async function confirmExecute() {
   if (!executeTarget.value) return
 
@@ -297,8 +376,7 @@ async function confirmExecute() {
     const execution = await jobStore.executeJob(executeTarget.value.id)
     executeDialog.value = false
     executeTarget.value = null
-    // 実行詳細画面に遷移
-    router.push(`/executions/${execution.id}`)
+    await router.push(`/executions/${execution.id}`)
   } catch (error) {
     console.error('ジョブの実行に失敗しました:', error)
   } finally {
@@ -306,15 +384,152 @@ async function confirmExecute() {
   }
 }
 
-// 初期データ取得
 onMounted(async () => {
   try {
-    await Promise.all([
-      serverStore.fetchServers(),
-      jobStore.fetchJobs()
-    ])
+    await Promise.all([serverStore.fetchServers(), jobStore.fetchJobs()])
   } catch (error) {
     console.error('データの取得に失敗しました:', error)
   }
 })
 </script>
+
+<style scoped>
+.job-grid {
+  margin-top: -12px;
+}
+
+.job-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.job-card__body {
+  flex: 1 1 auto;
+  padding: 24px !important;
+}
+
+.job-card__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.job-card__mark {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  color: rgb(var(--v-theme-primary));
+  background: rgb(var(--v-theme-primary-soft));
+  border-radius: 12px;
+}
+
+.job-card__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.32rem;
+  font-weight: 750;
+  letter-spacing: -0.025em;
+}
+
+.job-card__description {
+  min-height: 3.2em;
+  margin: 8px 0 22px;
+  color: rgb(var(--v-theme-on-surface-variant));
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.job-card__meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.job-card__meta-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+  padding: 11px 12px;
+  background: rgb(var(--v-theme-surface-light));
+  border-radius: 10px;
+}
+
+.job-card__meta-item .v-icon {
+  margin-top: 2px;
+  color: rgb(var(--v-theme-secondary));
+}
+
+.job-card__meta-item span,
+.job-card__meta-item strong {
+  display: block;
+}
+
+.job-card__meta-item span {
+  color: rgb(var(--v-theme-on-surface-variant));
+  font-size: 0.65rem;
+  font-weight: 650;
+}
+
+.job-card__meta-item strong {
+  margin-top: 2px;
+  overflow: hidden;
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-card__actions {
+  min-height: 62px;
+  padding: 10px 16px !important;
+}
+
+.script-field :deep(textarea) {
+  font-family: var(--font-mono);
+  font-size: 0.79rem;
+  line-height: 1.65;
+}
+
+.execute-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+  background: rgb(var(--v-theme-surface-light));
+  border: 1px solid rgba(var(--v-border-color), 0.09);
+  border-radius: 14px;
+}
+
+.execute-summary span,
+.execute-summary strong {
+  display: block;
+}
+
+.execute-summary span {
+  color: rgb(var(--v-theme-on-surface-variant));
+  font-size: 0.69rem;
+  font-weight: 650;
+}
+
+.execute-summary strong {
+  margin-top: 4px;
+  font-size: 0.86rem;
+}
+
+@media (max-width: 480px) {
+  .job-card__meta {
+    grid-template-columns: 1fr;
+  }
+
+  .execute-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .execute-summary > .v-icon {
+    transform: rotate(90deg);
+  }
+}
+</style>
