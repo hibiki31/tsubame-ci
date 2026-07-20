@@ -1,7 +1,7 @@
 """ジョブへ GitHub branch ポーリングトリガーを追加する。
 
-Revision ID: 0002_add_github_job_triggers
-Revises: 0001_existing_schema_baseline
+Revision ID: 0003_add_github_job_triggers
+Revises: 0002_server_monitoring
 Create Date: 2026-07-20
 """
 
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 
-revision: str = "0002_add_github_job_triggers"
-down_revision: Union[str, None] = "0001_existing_schema_baseline"
+revision: str = "0003_add_github_job_triggers"
+down_revision: Union[str, None] = "0002_server_monitoring"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -1,4 +1,4 @@
-"""Alembic の async SQLAlchemy 環境。"""
+"""Alembic の async SQLAlchemy migration 環境。"""
 
 from asyncio import run
 from logging.config import fileConfig

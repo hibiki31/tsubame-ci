@@ -9,8 +9,10 @@ from app.schemas.server import (
     ServerUpdate,
     ServerResponse,
     ServerTestRequest,
-    ServerTestResponse
+    ServerTestResponse,
+    ServerMonitoringResponse,
 )
+from app.core.config import settings
 from app.services.server_service import ServerService, ServerNotFoundError
 from app.api.deps import get_server_service
 
@@ -28,22 +30,33 @@ async def list_servers(
     return servers
 
 
-@router.get("/{server_id}", response_model=ServerResponse)
-async def get_server(
-    server_id: int,
+@router.get("/monitoring", response_model=ServerMonitoringResponse)
+async def get_monitoring_config():
+    """定期接続監視の有効状態と実行間隔を取得"""
+    return ServerMonitoringResponse(
+        enabled=settings.server_monitor_enabled,
+        check_interval_seconds=settings.server_check_interval_seconds,
+    )
+
+
+@router.post("/test", response_model=ServerTestResponse)
+async def test_server_connection(
+    test_data: ServerTestRequest,
     service: ServerService = Depends(get_server_service)
 ):
     """
-    サーバ詳細を取得
+    保存前の認証情報でSSH接続をテスト
     """
-    try:
-        server = await service.get_by_id(server_id)
-        return server
-    except ServerNotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        )
+    success, message = await service.test_connection(
+        host=test_data.host,
+        port=test_data.port,
+        username=test_data.username,
+        auth_method=test_data.auth_method,
+        password=test_data.password,
+        private_key=test_data.private_key
+    )
+
+    return ServerTestResponse(success=success, message=message)
 
 
 @router.post("", response_model=ServerResponse, status_code=status.HTTP_201_CREATED)
@@ -94,24 +107,25 @@ async def delete_server(
         )
 
 
-@router.post("/test", response_model=ServerTestResponse)
-async def test_server_connection(
-    test_data: ServerTestRequest,
+@router.post("/{server_id}/check", response_model=ServerResponse)
+async def check_server_connection(
+    server_id: int,
     service: ServerService = Depends(get_server_service)
 ):
-    """
-    SSH接続をテスト
-    """
-    success, message = await service.test_connection(
-        host=test_data.host,
-        port=test_data.port,
-        username=test_data.username,
-        auth_method=test_data.auth_method,
-        password=test_data.password,
-        private_key=test_data.private_key
-    )
-    
-    return ServerTestResponse(
-        success=success,
-        message=message
-    )
+    """保存済み認証情報で直ちに接続・構成確認を実行"""
+    try:
+        return await service.check_connection(server_id)
+    except ServerNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.get("/{server_id}", response_model=ServerResponse)
+async def get_server(
+    server_id: int,
+    service: ServerService = Depends(get_server_service)
+):
+    """サーバ詳細を取得"""
+    try:
+        return await service.get_by_id(server_id)
+    except ServerNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))

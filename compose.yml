@@ -36,6 +36,8 @@ services:
       GITHUB_POLLING_ENABLED: "True"
       GITHUB_POLL_INTERVAL_SECONDS: "60"
       GITHUB_API_TIMEOUT_SECONDS: "10"
+      SERVER_MONITOR_ENABLED: "True"
+      SERVER_CHECK_INTERVAL_SECONDS: "300"
     ports:
       - "8000:8000"
     depends_on:

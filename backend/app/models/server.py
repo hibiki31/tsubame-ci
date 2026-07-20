@@ -2,7 +2,7 @@
 サーバモデル
 SSH接続先サーバの情報を管理
 """
-from sqlalchemy import Column, Integer, String, DateTime, Enum as SQLEnum
+from sqlalchemy import Column, Integer, String, Text, DateTime, Enum as SQLEnum, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
@@ -14,6 +14,13 @@ class AuthMethod(str, enum.Enum):
     """SSH認証方式"""
     PASSWORD = "password"
     KEY = "key"
+
+
+class ServerConnectionStatus(str, enum.Enum):
+    """サーバ接続状態"""
+    UNKNOWN = "unknown"
+    ONLINE = "online"
+    OFFLINE = "offline"
 
 
 class Server(Base):
@@ -42,6 +49,22 @@ class Server(Base):
     )
     password_encrypted = Column(String(500), nullable=True, comment="暗号化されたパスワード")
     private_key_encrypted = Column(String(5000), nullable=True, comment="暗号化された秘密鍵")
+
+    # 監視情報
+    connection_status = Column(
+        String(20),
+        nullable=False,
+        default=ServerConnectionStatus.UNKNOWN.value,
+        server_default=ServerConnectionStatus.UNKNOWN.value,
+        index=True,
+        comment="直近のSSH接続状態"
+    )
+    last_checked_at = Column(DateTime(timezone=True), nullable=True, comment="最終接続確認日時")
+    last_check_latency_ms = Column(Integer, nullable=True, comment="SSH接続時間（ミリ秒）")
+    last_check_error = Column(Text, nullable=True, comment="直近の接続確認または構成取得エラー")
+    hardware_info = Column(JSON, nullable=True, comment="直近に取得したハードウェア情報")
+    software_info = Column(JSON, nullable=True, comment="直近に取得したソフトウェア情報")
+    inventory_collected_at = Column(DateTime(timezone=True), nullable=True, comment="構成情報取得日時")
     
     # タイムスタンプ
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="作成日時")

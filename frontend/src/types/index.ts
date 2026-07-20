@@ -5,6 +5,26 @@
 
 // サーバ関連の型
 export type AuthMethod = 'password' | 'key'
+export type ServerConnectionStatus = 'unknown' | 'online' | 'offline'
+
+export interface ServerHardwareInfo {
+  hostname: string | null
+  architecture: string | null
+  cpu_model: string | null
+  cpu_cores: number | null
+  memory_total_bytes: number | null
+  disk_total_bytes: number | null
+}
+
+export interface ServerSoftwareInfo {
+  os_name: string | null
+  os_version: string | null
+  kernel: string | null
+  package_manager: string | null
+  python_version: string | null
+  docker_version: string | null
+  git_version: string | null
+}
 
 export interface Server {
   id: number
@@ -16,6 +36,18 @@ export interface Server {
   auth_method: AuthMethod
   created_at: string
   updated_at: string | null
+  connection_status: ServerConnectionStatus
+  last_checked_at: string | null
+  last_check_latency_ms: number | null
+  last_check_error: string | null
+  hardware_info: ServerHardwareInfo | null
+  software_info: ServerSoftwareInfo | null
+  inventory_collected_at: string | null
+}
+
+export interface ServerMonitoring {
+  enabled: boolean
+  check_interval_seconds: number
 }
 
 export interface ServerCreate {

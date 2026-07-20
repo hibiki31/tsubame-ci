@@ -10,6 +10,8 @@ from app.core.config import settings
 from app.core.database import init_db
 from app.api.v1 import servers, jobs, executions
 from app.services.github_polling_service import GitHubPollingService
+from app.services.server_monitor import server_monitor
+from app import __version__
 
 
 @asynccontextmanager
@@ -25,22 +27,24 @@ async def lifespan(app: FastAPI):
         await init_db()
 
     github_poller = None
-    if settings.github_polling_enabled:
-        github_poller = GitHubPollingService()
-        await github_poller.start()
-        app.state.github_poller = github_poller
-
     try:
+        if settings.server_monitor_enabled:
+            server_monitor.start()
+        if settings.github_polling_enabled:
+            github_poller = GitHubPollingService()
+            await github_poller.start()
+            app.state.github_poller = github_poller
         yield
     finally:
         if github_poller:
             await github_poller.stop()
+        await server_monitor.stop()
 
 
 # FastAPIアプリケーションの作成
 app = FastAPI(
     title=settings.app_name,
-    version="0.1.0",
+    version=__version__,
     description="SSH経由でリモートサーバのスクリプトを実行するCI/CDツール",
     lifespan=lifespan,
 )
@@ -80,7 +84,7 @@ async def root():
     """ルートエンドポイント"""
     return {
         "name": settings.app_name,
-        "version": "0.1.0",
+        "version": __version__,
         "status": "running"
     }
 

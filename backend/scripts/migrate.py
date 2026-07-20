@@ -1,6 +1,7 @@
-"""既存 MVP database を安全に baseline 化して Alembic を適用する。"""
+"""既存 MVP database を判定し、単一 Alembic revision chain へ移行する。"""
 
 import asyncio
+from dataclasses import dataclass
 from pathlib import Path
 import sys
 
@@ -11,13 +12,26 @@ if str(BACKEND_DIR) not in sys.path:
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 
 from app.core.database import engine
 
 
-BASELINE_REVISION = "0001_existing_schema_baseline"
+INITIAL_REVISION = "0001_initial_schema"
+SERVER_REVISION = "0002_server_monitoring"
+HEAD_REVISION = "0003_add_github_job_triggers"
+LEGACY_TRIGGER_BASELINE = "0001_existing_schema_baseline"
+LEGACY_TRIGGER_REVISION = "0002_add_github_job_triggers"
 CORE_TABLES = {"servers", "jobs", "job_executions"}
+SERVER_MONITOR_COLUMNS = {
+    "connection_status",
+    "last_checked_at",
+    "last_check_latency_ms",
+    "last_check_error",
+    "hardware_info",
+    "software_info",
+    "inventory_collected_at",
+}
 GITHUB_JOB_COLUMNS = {
     "trigger_type",
     "github_repository",
@@ -31,59 +45,127 @@ GITHUB_JOB_COLUMNS = {
 TRIGGER_EXECUTION_COLUMNS = {"trigger_source", "trigger_commit_sha"}
 
 
-async def detect_schema_state() -> str:
+@dataclass(frozen=True)
+class SchemaState:
+    empty: bool
+    revision: str | None
+    has_server_monitoring: bool
+    has_github_triggers: bool
+
+
+async def detect_schema_state() -> SchemaState:
     async with engine.connect() as connection:
-        def inspect_schema(sync_connection) -> str:
+        def inspect_schema(sync_connection) -> tuple[bool, bool, bool]:
             inspector = inspect(sync_connection)
             tables = set(inspector.get_table_names())
-            if "alembic_version" in tables:
-                return "managed"
             present_core_tables = tables & CORE_TABLES
             if not present_core_tables:
-                return "empty"
+                return True, False, False
             if present_core_tables != CORE_TABLES:
                 missing = ", ".join(sorted(CORE_TABLES - present_core_tables))
                 raise RuntimeError(
                     f"既存databaseの必須tableが不足しています: {missing}"
                 )
 
+            server_columns = {
+                column["name"] for column in inspector.get_columns("servers")
+            }
             job_columns = {
                 column["name"] for column in inspector.get_columns("jobs")
             }
             execution_columns = {
                 column["name"] for column in inspector.get_columns("job_executions")
             }
-            has_job_trigger_columns = GITHUB_JOB_COLUMNS <= job_columns
-            has_execution_trigger_columns = (
-                TRIGGER_EXECUTION_COLUMNS <= execution_columns
-            )
-            if has_job_trigger_columns and has_execution_trigger_columns:
-                return "head_without_version"
-            if not (job_columns & GITHUB_JOB_COLUMNS) and not (
+            server_present = server_columns & SERVER_MONITOR_COLUMNS
+            trigger_job_present = job_columns & GITHUB_JOB_COLUMNS
+            trigger_execution_present = (
                 execution_columns & TRIGGER_EXECUTION_COLUMNS
-            ):
-                return "legacy"
-            raise RuntimeError(
-                "GitHubトリガーのcolumnが一部だけ存在します。"
-                "database schemaを確認してからmigrationを再実行してください"
+            )
+            if server_present and server_present != SERVER_MONITOR_COLUMNS:
+                raise RuntimeError("サーバ監視columnが一部だけ存在します")
+            if (
+                trigger_job_present
+                and trigger_job_present != GITHUB_JOB_COLUMNS
+            ) or (
+                trigger_execution_present
+                and trigger_execution_present != TRIGGER_EXECUTION_COLUMNS
+            ) or bool(trigger_job_present) != bool(trigger_execution_present):
+                raise RuntimeError("GitHubトリガーcolumnが一部だけ存在します")
+            return (
+                False,
+                server_present == SERVER_MONITOR_COLUMNS,
+                trigger_job_present == GITHUB_JOB_COLUMNS,
             )
 
-        state = await connection.run_sync(inspect_schema)
+        empty, has_server_monitoring, has_github_triggers = (
+            await connection.run_sync(inspect_schema)
+        )
+        revision = None
+        if not empty:
+            inspector_tables = await connection.run_sync(
+                lambda sync_connection: set(inspect(sync_connection).get_table_names())
+            )
+            if "alembic_version" in inspector_tables:
+                revisions = list(
+                    (
+                        await connection.execute(
+                            text("SELECT version_num FROM alembic_version")
+                        )
+                    ).scalars()
+                )
+                if len(revisions) > 1:
+                    raise RuntimeError("複数のAlembic headが登録されています")
+                revision = revisions[0] if revisions else None
+
     await engine.dispose()
-    return state
+    return SchemaState(
+        empty=empty,
+        revision=revision,
+        has_server_monitoring=has_server_monitoring,
+        has_github_triggers=has_github_triggers,
+    )
+
+
+def stamp(config: Config, revision: str) -> None:
+    command.stamp(config, revision, purge=True)
+
+
+def upgrade_legacy_schema(config: Config, state: SchemaState) -> None:
+    """Alembic 導入前 schema を、存在する column に合わせて baseline 化する。"""
+
+    if state.has_server_monitoring and state.has_github_triggers:
+        stamp(config, HEAD_REVISION)
+    elif state.has_server_monitoring:
+        stamp(config, SERVER_REVISION)
+        command.upgrade(config, "head")
+    elif state.has_github_triggers:
+        # 旧 trigger branch 適用済み DB には server migration だけを適用する。
+        stamp(config, INITIAL_REVISION)
+        command.upgrade(config, SERVER_REVISION)
+        stamp(config, HEAD_REVISION)
+    else:
+        stamp(config, INITIAL_REVISION)
+        command.upgrade(config, "head")
 
 
 def main() -> None:
     config = Config(str(BACKEND_DIR / "alembic.ini"))
     state = asyncio.run(detect_schema_state())
 
-    if state == "legacy":
-        command.stamp(config, BASELINE_REVISION)
-    elif state == "head_without_version":
-        command.stamp(config, "head")
+    if state.empty:
+        command.upgrade(config, "head")
         return
-
-    command.upgrade(config, "head")
+    if state.revision in {INITIAL_REVISION, SERVER_REVISION, HEAD_REVISION}:
+        command.upgrade(config, "head")
+        return
+    if state.revision in {
+        None,
+        LEGACY_TRIGGER_BASELINE,
+        LEGACY_TRIGGER_REVISION,
+    }:
+        upgrade_legacy_schema(config, state)
+        return
+    raise RuntimeError(f"未対応のAlembic revisionです: {state.revision}")
 
 
 if __name__ == "__main__":

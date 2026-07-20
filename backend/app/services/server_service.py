@@ -5,8 +5,9 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List, Optional
+from datetime import datetime, timezone
 
-from app.models.server import Server, AuthMethod
+from app.models.server import Server, AuthMethod, ServerConnectionStatus
 from app.schemas.server import ServerCreate, ServerUpdate
 from app.core.security import credential_encryptor
 from app.services.ssh_service import ssh_service
@@ -20,8 +21,9 @@ class ServerNotFoundError(Exception):
 class ServerService:
     """サーバ管理サービス"""
     
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, ssh=ssh_service):
         self.db = db
+        self.ssh = ssh
     
     async def get_all(self) -> List[Server]:
         """
@@ -171,7 +173,7 @@ class ServerService:
         Returns:
             (成功フラグ, メッセージ) のタプル
         """
-        return await ssh_service.test_connection(
+        return await self.ssh.test_connection(
             host=host,
             port=port,
             username=username,
@@ -179,3 +181,27 @@ class ServerService:
             password=password,
             private_key=private_key
         )
+
+    async def check_connection(self, server_id: int) -> Server:
+        """保存済み認証情報で接続確認し、監視・構成情報を更新する"""
+        server = await self.get_by_id(server_id)
+        server.last_checked_at = datetime.now(timezone.utc)
+
+        try:
+            inspection = await self.ssh.inspect_server(server)
+            server.connection_status = ServerConnectionStatus.ONLINE.value
+            server.last_check_latency_ms = inspection.latency_ms
+            server.last_check_error = inspection.warning
+
+            if inspection.hardware_info or inspection.software_info:
+                server.hardware_info = inspection.hardware_info
+                server.software_info = inspection.software_info
+                server.inventory_collected_at = server.last_checked_at
+        except Exception as exc:
+            server.connection_status = ServerConnectionStatus.OFFLINE.value
+            server.last_check_latency_ms = None
+            server.last_check_error = str(exc)
+
+        await self.db.commit()
+        await self.db.refresh(server)
+        return server

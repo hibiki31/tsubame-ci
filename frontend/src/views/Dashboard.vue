@@ -1,90 +1,110 @@
 <template>
   <div>
-    <h1 class="text-h4 mb-6">ダッシュボード</h1>
+    <AppPageHeader
+      eyebrow="Overview"
+      icon="mdi-view-dashboard-outline"
+      title="ダッシュボード"
+      description="登録リソースと直近の実行状況を、ひと目で確認できます。"
+    >
+      <template #actions>
+        <v-btn color="primary" prepend-icon="mdi-play-outline" to="/jobs">ジョブを実行</v-btn>
+      </template>
+    </AppPageHeader>
 
-    <!-- 統計カード -->
-    <v-row>
-      <v-col cols="12" md="3">
-        <v-card>
-          <v-card-text>
-            <div class="text-h6">サーバ数</div>
-            <div class="text-h3 mt-2">{{ servers.length }}</div>
-          </v-card-text>
-        </v-card>
-      </v-col>
+    <v-alert
+      v-if="loadError"
+      class="mb-6"
+      closable
+      color="error"
+      icon="mdi-alert-circle-outline"
+      title="データを取得できませんでした"
+      variant="tonal"
+    >
+      {{ loadError }}
+    </v-alert>
 
-      <v-col cols="12" md="3">
-        <v-card>
-          <v-card-text>
-            <div class="text-h6">ジョブ数</div>
-            <div class="text-h3 mt-2">{{ jobs.length }}</div>
-          </v-card-text>
-        </v-card>
-      </v-col>
-
-      <v-col cols="12" md="3">
-        <v-card color="success">
-          <v-card-text class="text-white">
-            <div class="text-h6">成功</div>
-            <div class="text-h3 mt-2">{{ successCount }}</div>
-          </v-card-text>
-        </v-card>
-      </v-col>
-
-      <v-col cols="12" md="3">
-        <v-card color="error">
-          <v-card-text class="text-white">
-            <div class="text-h6">失敗</div>
-            <div class="text-h3 mt-2">{{ failedCount }}</div>
+    <v-row class="metric-grid">
+      <v-col v-for="metric in metrics" :key="metric.label" cols="12" sm="6" lg="3">
+        <v-card class="metric-card panel-card" height="100%">
+          <v-card-text class="metric-card__body">
+            <div :class="['metric-card__icon', `metric-card__icon--${metric.tone}`]">
+              <v-icon :icon="metric.icon" size="22" />
+            </div>
+            <div>
+              <div class="metric-card__label">{{ metric.label }}</div>
+              <div class="metric-card__value">{{ metric.value }}</div>
+              <div class="metric-card__hint">{{ metric.hint }}</div>
+            </div>
           </v-card-text>
         </v-card>
       </v-col>
     </v-row>
 
-    <!-- 最近の実行履歴 -->
-    <v-card class="mt-6">
-      <v-card-title>最近の実行履歴</v-card-title>
-      <v-card-text>
-        <v-data-table
-          :headers="headers"
-          :items="latestExecutions"
-          :loading="loading"
-          :items-per-page="10"
-          density="compact"
-        >
-          <template v-slot:item.status="{ item }">
-            <v-chip
-              :color="getStatusColor(item.status)"
-              size="small"
-            >
-              {{ getStatusText(item.status) }}
-            </v-chip>
-          </template>
+    <v-card class="panel-card table-card mt-6">
+      <v-card-title class="panel-card__header">
+        <div>
+          <div class="panel-card__title">最近の実行</div>
+          <div class="panel-card__subtitle">新しいものから最大10件を表示</div>
+        </div>
+        <v-btn color="primary" size="small" to="/executions" variant="text" append-icon="mdi-arrow-right">
+          すべて見る
+        </v-btn>
+      </v-card-title>
 
-          <template v-slot:item.created_at="{ item }">
-            {{ formatDate(item.created_at) }}
-          </template>
+      <v-data-table
+        :headers="headers"
+        :items="latestExecutions"
+        :loading="loading"
+        :items-per-page="10"
+        density="comfortable"
+        hover
+      >
+        <template #item.job_name="{ item }">
+          <div class="job-cell">
+            <div class="job-cell__mark" aria-hidden="true"><v-icon icon="mdi-script-text-outline" size="17" /></div>
+            <span>{{ item.job?.name || `ジョブ #${item.job_id}` }}</span>
+          </div>
+        </template>
 
-          <template v-slot:item.actions="{ item }">
-            <v-btn
-              icon="mdi-eye"
-              size="small"
-              variant="text"
-              :to="`/executions/${item.id}`"
-            ></v-btn>
-          </template>
-        </v-data-table>
-      </v-card-text>
+        <template #item.status="{ item }">
+          <ExecutionStatusChip :status="item.status" />
+        </template>
+
+        <template #item.created_at="{ item }">
+          <span class="date-cell">{{ formatDate(item.created_at) }}</span>
+        </template>
+
+        <template #item.actions="{ item }">
+          <v-btn
+            :aria-label="`実行 ${item.id} の詳細を見る`"
+            class="icon-action"
+            icon="mdi-arrow-top-right"
+            size="small"
+            variant="text"
+            :to="`/executions/${item.id}`"
+          />
+        </template>
+
+        <template #no-data>
+          <v-empty-state
+            class="empty-state"
+            icon="mdi-history"
+            title="実行履歴はまだありません"
+            text="ジョブを実行すると、ここに結果が表示されます。"
+          />
+        </template>
+      </v-data-table>
     </v-card>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
+import AppPageHeader from '@/components/AppPageHeader.vue'
+import ExecutionStatusChip from '@/components/ExecutionStatusChip.vue'
 import { useServerStore } from '@/stores/server'
 import { useJobStore } from '@/stores/job'
 import { useExecutionStore } from '@/stores/execution'
-import type { ExecutionStatus } from '@/types'
 
 const serverStore = useServerStore()
 const jobStore = useJobStore()
@@ -94,59 +114,38 @@ const servers = computed(() => serverStore.servers)
 const jobs = computed(() => jobStore.jobs)
 const latestExecutions = computed(() => executionStore.latestExecutions)
 const loading = computed(() => executionStore.loading)
+const loadError = computed(() => serverStore.error || jobStore.error || executionStore.error)
 
-// 成功・失敗の集計
-const successCount = computed(() => 
-  latestExecutions.value.filter(e => e.status === 'success').length
-)
-const failedCount = computed(() => 
-  latestExecutions.value.filter(e => e.status === 'failed').length
-)
+const successCount = computed(() => latestExecutions.value.filter((item) => item.status === 'success').length)
+const failedCount = computed(() => latestExecutions.value.filter((item) => item.status === 'failed').length)
 
-// テーブルヘッダー
+const metrics = computed(() => [
+  { label: '登録サーバ', value: servers.value.length, hint: '接続先', icon: 'mdi-server-outline', tone: 'primary' },
+  { label: '登録ジョブ', value: jobs.value.length, hint: '実行可能', icon: 'mdi-script-text-outline', tone: 'info' },
+  { label: '成功', value: successCount.value, hint: '直近10件', icon: 'mdi-check-circle-outline', tone: 'success' },
+  { label: '失敗', value: failedCount.value, hint: '要確認', icon: 'mdi-alert-circle-outline', tone: 'error' },
+])
+
 const headers = [
-  { title: 'ジョブ名', key: 'job.name' },
-  { title: 'ステータス', key: 'status' },
-  { title: '実行日時', key: 'created_at' },
-  { title: '操作', key: 'actions', sortable: false }
+  { title: 'ジョブ', key: 'job_name' },
+  { title: 'ステータス', key: 'status', width: 150 },
+  { title: '実行日時', key: 'created_at', width: 210 },
+  { title: '', key: 'actions', sortable: false, align: 'end' as const, width: 72 },
 ]
 
-// ステータスの色
-function getStatusColor(status: ExecutionStatus): string {
-  switch (status) {
-    case 'success': return 'success'
-    case 'failed': return 'error'
-    case 'running': return 'info'
-    case 'pending': return 'warning'
-    default: return 'grey'
-  }
-}
-
-// ステータスのテキスト
-function getStatusText(status: ExecutionStatus): string {
-  switch (status) {
-    case 'success': return '成功'
-    case 'failed': return '失敗'
-    case 'running': return '実行中'
-    case 'pending': return '待機中'
-    case 'cancelled': return 'キャンセル'
-    default: return status
-  }
-}
-
-// 日付フォーマット
 function formatDate(dateString: string): string {
-  const date = new Date(dateString)
-  return date.toLocaleString('ja-JP')
+  return new Intl.DateTimeFormat('ja-JP', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(dateString))
 }
 
-// 初期データの取得
 onMounted(async () => {
   try {
     await Promise.all([
       serverStore.fetchServers(),
       jobStore.fetchJobs(),
-      executionStore.fetchExecutions(10)
+      executionStore.fetchExecutions(10),
     ])
   } catch (error) {
     console.error('データの取得に失敗しました:', error)
@@ -155,5 +154,100 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-/* スタイルはVuetifyのクラスで対応 */
+.metric-grid {
+  margin-top: -12px;
+}
+
+.metric-card {
+  position: relative;
+}
+
+.metric-card::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: rgb(var(--v-theme-primary));
+  content: "";
+  opacity: 0.16;
+}
+
+.metric-card__body {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  padding: 24px !important;
+}
+
+.metric-card__icon {
+  display: grid;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  color: rgb(var(--v-theme-primary));
+  background: rgba(var(--v-theme-primary), 0.09);
+  border-radius: 13px;
+}
+
+.metric-card__icon--info {
+  color: rgb(var(--v-theme-info));
+  background: rgba(var(--v-theme-info), 0.09);
+}
+
+.metric-card__icon--success {
+  color: rgb(var(--v-theme-success));
+  background: rgba(var(--v-theme-success), 0.09);
+}
+
+.metric-card__icon--error {
+  color: rgb(var(--v-theme-error));
+  background: rgba(var(--v-theme-error), 0.09);
+}
+
+.metric-card__label {
+  color: rgb(var(--v-theme-on-surface-variant));
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.metric-card__value {
+  margin-top: 2px;
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 750;
+  letter-spacing: -0.04em;
+  line-height: 1.15;
+}
+
+.metric-card__hint {
+  margin-top: 3px;
+  color: rgba(var(--v-theme-on-surface), 0.48);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.job-cell {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 180px;
+  font-weight: 700;
+}
+
+.job-cell__mark {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  color: rgb(var(--v-theme-primary));
+  background: rgb(var(--v-theme-primary-soft));
+  border-radius: 9px;
+}
+
+.date-cell {
+  color: rgb(var(--v-theme-on-surface-variant));
+  font-variant-numeric: tabular-nums;
+}
 </style>

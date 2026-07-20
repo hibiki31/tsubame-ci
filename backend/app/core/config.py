@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     github_polling_enabled: bool = True
     github_poll_interval_seconds: int = Field(default=60, ge=10)
     github_api_timeout_seconds: int = Field(default=10, ge=1)
+
+    # サーバ監視設定
+    server_monitor_enabled: bool = True
+    server_check_interval_seconds: int = Field(300, ge=10, le=86400)
+    server_check_concurrency: int = Field(5, ge=1, le=50)
+    server_inventory_timeout: int = Field(15, ge=1, le=120)
     
     model_config = SettingsConfigDict(
         env_file=".env",

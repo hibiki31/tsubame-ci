@@ -1,34 +1,265 @@
-/**
- * グローバルスタイル
- * VuetifyのUIフレームワークを使用しているため、最小限のリセットのみ
- */
+:root {
+  --font-display: "Avenir Next Condensed", "Bahnschrift", "DIN Alternate", sans-serif;
+  --font-body: "Avenir Next", "Noto Sans JP", "Hiragino Sans", sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  --focus-ring: #df7b32;
+  font-family: var(--font-body);
+  color: #17312f;
+  background: #f4f6f3;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
 
-/* ブラウザのデフォルトマージンをリセット */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  background: #f4f6f3;
+}
+
 body {
+  min-width: 320px;
+  min-height: 100vh;
   margin: 0;
   padding: 0;
 }
 
-/* Vuetifyが全画面を管理するため、#appには特別なスタイルを適用しない */
 #app {
-  /* Vuetifyのv-appコンポーネントが全画面レイアウトを管理 */
+  min-height: 100vh;
 }
 
-/* スクロールバーのカスタマイズ（オプション） */
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+a {
+  color: rgb(var(--v-theme-primary));
+  font-weight: 700;
+  text-underline-offset: 3px;
+}
+
+:where(a, button, input, textarea, select, [tabindex]):focus-visible {
+  outline: 3px solid var(--focus-ring) !important;
+  outline-offset: 3px;
+}
+
+.v-field input:focus-visible,
+.v-field textarea:focus-visible {
+  outline: none !important;
+}
+
+.v-field:has(input:focus-visible),
+.v-field:has(textarea:focus-visible) {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.v-btn:focus-visible > .v-btn__overlay,
+.v-list-item:focus-visible > .v-list-item__overlay {
+  background: #f6b67d !important;
+  opacity: 0.16 !important;
+}
+
+.v-field--focused .v-field__overlay {
+  background: rgba(223, 123, 50, 0.05) !important;
+  opacity: 1 !important;
+}
+
+.app-main {
+  background:
+    radial-gradient(circle at 90% 3%, rgba(201, 104, 43, 0.055), transparent 24rem),
+    rgb(var(--v-theme-background));
+}
+
+.app-container {
+  max-width: 1480px;
+  padding: 40px 44px 64px !important;
+}
+
+.panel-card {
+  overflow: hidden;
+  border: 1px solid rgba(var(--v-border-color), 0.1) !important;
+  box-shadow: 0 12px 34px rgba(23, 61, 59, 0.045) !important;
+}
+
+.panel-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 24px 18px !important;
+}
+
+.panel-card__title {
+  color: rgb(var(--v-theme-on-surface));
+  font-family: var(--font-display);
+  font-size: 1.12rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+}
+
+.panel-card__subtitle {
+  margin-top: 3px;
+  color: rgb(var(--v-theme-on-surface-variant));
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.table-card .v-data-table-header__content {
+  color: rgb(var(--v-theme-on-surface-variant));
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.table-card .v-data-table__tr:hover > td {
+  background: rgba(var(--v-theme-primary), 0.035) !important;
+}
+
+.table-card .v-data-table-footer {
+  border-top: 1px solid rgba(var(--v-border-color), 0.08);
+}
+
+.dialog-card .v-card-title {
+  padding: 24px 26px 8px;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 750;
+  letter-spacing: -0.025em;
+}
+
+.dialog-card .v-card-subtitle {
+  padding: 0 26px 18px;
+  color: rgb(var(--v-theme-on-surface-variant));
+  opacity: 1;
+}
+
+.dialog-card .v-card-text {
+  padding: 18px 26px 8px;
+}
+
+.dialog-card .v-card-actions {
+  gap: 8px;
+  padding: 18px 26px 24px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 16px;
+}
+
+.form-grid__wide {
+  grid-column: 1 / -1;
+}
+
+.code-panel {
+  margin: 0;
+  padding: 22px 24px;
+  overflow: auto;
+  color: #d7e4df;
+  background: #152725;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  line-height: 1.7;
+  tab-size: 2;
+}
+
+.empty-state {
+  padding: 40px 24px !important;
+}
+
+.icon-action {
+  color: rgb(var(--v-theme-on-surface-variant));
+}
+
+.page-enter-active,
+.page-leave-active {
+  transition: opacity 160ms ease, transform 180ms ease;
+}
+
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(7px);
+}
+
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-3px);
+}
+
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: #edf0ed;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #888;
-  border-radius: 4px;
+  background: #a8b3af;
+  border: 2px solid #edf0ed;
+  border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #555;
+  background: #7c8c87;
+}
+
+@media (max-width: 959px) {
+  .app-container {
+    padding: 32px 28px 52px !important;
+  }
+}
+
+@media (max-width: 599px) {
+  .app-container {
+    padding: 24px 16px 40px !important;
+  }
+
+  .panel-card__header {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 20px 18px 15px !important;
+  }
+
+  .dialog-card .v-card-title {
+    padding-inline: 20px;
+  }
+
+  .dialog-card .v-card-subtitle,
+  .dialog-card .v-card-text,
+  .dialog-card .v-card-actions {
+    padding-inline: 20px;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .form-grid__wide {
+    grid-column: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
