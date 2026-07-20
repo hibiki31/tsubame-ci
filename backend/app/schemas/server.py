@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional
 from datetime import datetime
 
-from app.models.server import AuthMethod
+from app.models.server import AuthMethod, ServerConnectionStatus
 
 
 # 基本スキーマ
@@ -40,12 +40,40 @@ class ServerUpdate(BaseModel):
     private_key: Optional[str] = Field(None, description="新しい秘密鍵")
 
 
+class ServerHardwareInfo(BaseModel):
+    """SSH経由で取得したハードウェア情報"""
+    hostname: Optional[str] = None
+    architecture: Optional[str] = None
+    cpu_model: Optional[str] = None
+    cpu_cores: Optional[int] = None
+    memory_total_bytes: Optional[int] = None
+    disk_total_bytes: Optional[int] = None
+
+
+class ServerSoftwareInfo(BaseModel):
+    """SSH経由で取得したソフトウェア情報"""
+    os_name: Optional[str] = None
+    os_version: Optional[str] = None
+    kernel: Optional[str] = None
+    package_manager: Optional[str] = None
+    python_version: Optional[str] = None
+    docker_version: Optional[str] = None
+    git_version: Optional[str] = None
+
+
 # レスポンススキーマ
 class ServerResponse(ServerBase):
     """サーバ情報のレスポンス"""
     id: int
     created_at: datetime
     updated_at: Optional[datetime] = None
+    connection_status: ServerConnectionStatus = ServerConnectionStatus.UNKNOWN
+    last_checked_at: Optional[datetime] = None
+    last_check_latency_ms: Optional[int] = None
+    last_check_error: Optional[str] = None
+    hardware_info: Optional[ServerHardwareInfo] = None
+    software_info: Optional[ServerSoftwareInfo] = None
+    inventory_collected_at: Optional[datetime] = None
     
     model_config = ConfigDict(from_attributes=True)
 
@@ -66,3 +94,9 @@ class ServerTestResponse(BaseModel):
     success: bool
     message: str
     details: Optional[str] = None
+
+
+class ServerMonitoringResponse(BaseModel):
+    """定期接続監視の設定情報"""
+    enabled: bool
+    check_interval_seconds: int

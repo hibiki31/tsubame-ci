@@ -9,6 +9,8 @@ from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.core.database import init_db
 from app.api.v1 import servers, jobs, executions
+from app.services.server_monitor import server_monitor
+from app import __version__
 
 
 @asynccontextmanager
@@ -22,17 +24,20 @@ async def lifespan(app: FastAPI):
         # 開発環境ではテーブルを自動作成
         # 本番環境ではAlembicマイグレーションを使用
         await init_db()
-    
-    yield
-    
-    # 終了時の処理
-    pass
+
+    if settings.server_monitor_enabled:
+        server_monitor.start()
+
+    try:
+        yield
+    finally:
+        await server_monitor.stop()
 
 
 # FastAPIアプリケーションの作成
 app = FastAPI(
     title=settings.app_name,
-    version="0.1.0",
+    version=__version__,
     description="SSH経由でリモートサーバのスクリプトを実行するCI/CDツール",
     lifespan=lifespan,
 )
@@ -72,7 +77,7 @@ async def root():
     """ルートエンドポイント"""
     return {
         "name": settings.app_name,
-        "version": "0.1.0",
+        "version": __version__,
         "status": "running"
     }
 
