@@ -33,6 +33,8 @@ services:
       ENCRYPTION_KEY: dev-encryption-key-change-in-production-32bytes
       ALLOWED_ORIGINS: http://localhost:3000,http://localhost:5173
       DEBUG: "True"
+      SERVER_MONITOR_ENABLED: "True"
+      SERVER_CHECK_INTERVAL_SECONDS: "300"
     ports:
       - "8000:8000"
     depends_on:

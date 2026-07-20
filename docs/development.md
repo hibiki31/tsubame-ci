@@ -26,6 +26,25 @@ cp .env.example .env
 uvicorn app.main:app --reload
 ```
 
+## DB migration
+
+新規 DB は Backend 起動前に次を実行する。
+
+```bash
+cd backend
+alembic upgrade head
+```
+
+このプロジェクトで従来使われていた `Base.metadata.create_all()` により作成済みの DB は、先にバックアップを取得し、既存 schema が `0001_initial_schema` と一致することを確認してから baseline を登録する。
+
+```bash
+cd backend
+alembic stamp 0001_initial_schema
+alembic upgrade head
+```
+
+Compose の既存 DB を更新する場合は同じコマンドを `docker compose exec backend ...` で実行する。`stamp` は schema を変更せず migration 適用済み位置だけを記録するため、別 schema や一部だけ作成された DB には使わない。
+
 Frontend は Backend を `localhost:8000` で起動して使用する。
 
 ```bash
@@ -47,8 +66,9 @@ npm run dev
 ```bash
 docker compose config --quiet
 python3 -m compileall -q backend/app
+cd backend && python -m unittest discover -s tests -v
 cd frontend && npm ci && npm run build
 git diff --check
 ```
 
-現在は test suite、coverage、Backend lint/type-check、Alembic 環境がない。検証できない項目は成功扱いにせず、理由と影響を報告する。
+Backend には SSH 接続終了処理とサーバ監視の `unittest` がある。coverage、Backend lint/type-check、Frontend component/E2E test はまだない。検証できない項目は成功扱いにせず、理由と影響を報告する。

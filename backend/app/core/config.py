@@ -2,6 +2,7 @@
 アプリケーション設定
 環境変数から設定を読み込む
 """
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
 
@@ -29,6 +30,12 @@ class Settings(BaseSettings):
     # SSH設定
     ssh_timeout: int = 300
     ssh_connect_timeout: int = 30
+
+    # サーバ監視設定
+    server_monitor_enabled: bool = True
+    server_check_interval_seconds: int = Field(300, ge=10, le=86400)
+    server_check_concurrency: int = Field(5, ge=1, le=50)
+    server_inventory_timeout: int = Field(15, ge=1, le=120)
     
     model_config = SettingsConfigDict(
         env_file=".env",

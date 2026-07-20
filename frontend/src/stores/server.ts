@@ -5,7 +5,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { serverApi } from '@/services/api'
-import type { Server, ServerCreate, ServerUpdate } from '@/types'
+import type { Server, ServerCreate, ServerUpdate, ServerMonitoring } from '@/types'
 
 export const useServerStore = defineStore('server', () => {
   // State
@@ -13,6 +13,7 @@ export const useServerStore = defineStore('server', () => {
   const currentServer = ref<Server | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const monitoring = ref<ServerMonitoring | null>(null)
 
   // Getters
   const getServerById = computed(() => {
@@ -20,8 +21,8 @@ export const useServerStore = defineStore('server', () => {
   })
 
   // Actions
-  async function fetchServers() {
-    loading.value = true
+  async function fetchServers(silent = false) {
+    if (!silent) loading.value = true
     error.value = null
     try {
       servers.value = await serverApi.getAll()
@@ -29,7 +30,17 @@ export const useServerStore = defineStore('server', () => {
       error.value = err instanceof Error ? err.message : 'サーバ一覧の取得に失敗しました'
       throw err
     } finally {
-      loading.value = false
+      if (!silent) loading.value = false
+    }
+  }
+
+  async function fetchMonitoring() {
+    try {
+      monitoring.value = await serverApi.getMonitoring()
+      return monitoring.value
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '監視設定の取得に失敗しました'
+      throw err
     }
   }
 
@@ -100,6 +111,20 @@ export const useServerStore = defineStore('server', () => {
     }
   }
 
+  async function checkServer(id: number) {
+    error.value = null
+    try {
+      const checked = await serverApi.check(id)
+      const index = servers.value.findIndex(s => s.id === id)
+      if (index !== -1) servers.value[index] = checked
+      if (currentServer.value?.id === id) currentServer.value = checked
+      return checked
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'サーバの接続確認に失敗しました'
+      throw err
+    }
+  }
+
   function clearError() {
     error.value = null
   }
@@ -110,6 +135,7 @@ export const useServerStore = defineStore('server', () => {
     currentServer,
     loading,
     error,
+    monitoring,
     
     // Getters
     getServerById,
@@ -117,9 +143,11 @@ export const useServerStore = defineStore('server', () => {
     // Actions
     fetchServers,
     fetchServer,
+    fetchMonitoring,
     createServer,
     updateServer,
     deleteServer,
+    checkServer,
     clearError
   }
 })

@@ -4,7 +4,7 @@
  */
 import axios from 'axios'
 import type { 
-  Server, ServerCreate, ServerUpdate, ServerTestRequest, ServerTestResponse,
+  Server, ServerCreate, ServerUpdate, ServerTestRequest, ServerTestResponse, ServerMonitoring,
   Job, JobCreate, JobUpdate, JobWithServer,
   Execution, ExecutionWithJob
 } from '@/types'
@@ -42,6 +42,12 @@ export const serverApi = {
     return response.data
   },
 
+  // 定期監視設定取得
+  async getMonitoring(): Promise<ServerMonitoring> {
+    const response = await apiClient.get<ServerMonitoring>('/servers/monitoring')
+    return response.data
+  },
+
   // サーバ作成
   async create(data: ServerCreate): Promise<Server> {
     const response = await apiClient.post<Server>('/servers', data)
@@ -57,6 +63,14 @@ export const serverApi = {
   // サーバ削除
   async delete(id: number): Promise<void> {
     await apiClient.delete(`/servers/${id}`)
+  },
+
+  // 保存済み認証情報で接続・構成情報を再確認
+  async check(id: number): Promise<Server> {
+    const response = await apiClient.post<Server>(`/servers/${id}/check`, undefined, {
+      timeout: 60000
+    })
+    return response.data
   },
 
   // SSH接続テスト
