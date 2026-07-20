@@ -14,5 +14,5 @@ tsubame-ci の短い開発資料。必要な文書だけを読むための入口
 
 - Backend: Python 3.11 / FastAPI / SQLAlchemy async / PostgreSQL / asyncssh
 - Frontend: Vue 3 / TypeScript / Vuetify / Pinia / Axios / Vite
-- Runtime: Docker Compose、Nginx。UI は `http://localhost:8888`、API は `http://localhost:8000`。
-- 主機能: SSH 接続先、ジョブ、実行履歴の管理と Web ダッシュボード。
+- Runtime: Docker Compose、Nginx。UI は `http://localhost:30682`、API は `http://localhost:8000`。
+- 主機能: SSH 接続先、ジョブ、実行履歴の管理、GitHub branch ポーリングトリガー、Web ダッシュボード。

@@ -73,12 +73,21 @@ export interface ServerUpdate {
 }
 
 // ジョブ関連の型
+export type JobTriggerType = 'manual' | 'github_poll'
+
 export interface Job {
   id: number
   name: string
   description: string | null
   script: string
   server_id: number
+  trigger_type: JobTriggerType
+  github_repository: string | null
+  github_branch: string | null
+  github_token_configured: boolean
+  github_last_commit_sha: string | null
+  github_last_checked_at: string | null
+  github_last_error: string | null
   created_at: string
   updated_at: string | null
 }
@@ -92,6 +101,10 @@ export interface JobCreate {
   description?: string
   script: string
   server_id: number
+  trigger_type?: JobTriggerType
+  github_repository?: string
+  github_branch?: string
+  github_token?: string
 }
 
 export interface JobUpdate {
@@ -99,15 +112,22 @@ export interface JobUpdate {
   description?: string
   script?: string
   server_id?: number
+  trigger_type?: JobTriggerType
+  github_repository?: string | null
+  github_branch?: string | null
+  github_token?: string | null
 }
 
 // 実行履歴関連の型
-export type ExecutionStatus = 'pending' | 'running' | 'success' | 'failed' | 'cancelled'
+export type ExecutionStatus = 'pending' | 'running' | 'success' | 'failed' | 'timeout' | 'cancelled'
+export type ExecutionTriggerSource = 'manual' | 'github_poll'
 
 export interface Execution {
   id: number
   job_id: number
   status: ExecutionStatus
+  trigger_source: ExecutionTriggerSource
+  trigger_commit_sha: string | null
   exit_code: number | null
   stdout: string | null
   stderr: string | null

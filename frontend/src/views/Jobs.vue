@@ -60,6 +60,18 @@
                 </div>
               </div>
             </div>
+
+            <div
+              v-if="job.trigger_type === 'github_poll'"
+              class="job-card__trigger"
+              :class="{ 'job-card__trigger--error': job.github_last_error }"
+            >
+              <div class="job-card__trigger-heading">
+                <v-icon icon="mdi-source-branch" size="17" />
+                <strong>{{ job.github_repository }} · {{ job.github_branch }}</strong>
+              </div>
+              <span>{{ formatPollingStatus(job) }}</span>
+            </div>
           </v-card-text>
 
           <v-divider />
@@ -110,12 +122,16 @@
       </v-empty-state>
     </v-card>
 
-    <v-dialog v-model="dialog" max-width="820">
+    <v-dialog v-model="dialog" max-width="900">
       <v-card class="dialog-card">
         <v-card-title>{{ editMode ? 'ジョブを編集' : 'ジョブを追加' }}</v-card-title>
         <v-card-subtitle>実行先とシェルスクリプトを設定してください。</v-card-subtitle>
         <v-divider />
         <v-card-text>
+          <v-alert v-if="saveError" class="mb-5" color="error" icon="mdi-alert-circle-outline" variant="tonal">
+            {{ saveError }}
+          </v-alert>
+
           <v-alert
             v-if="servers.length === 0"
             class="mb-5"
@@ -168,6 +184,65 @@
                 required
               />
             </div>
+
+            <v-divider class="my-6" />
+
+            <section aria-labelledby="github-trigger-heading">
+              <div class="trigger-heading">
+                <div>
+                  <h2 id="github-trigger-heading">GitHub ブランチ監視</h2>
+                  <p>Webhook を公開せず、Backend から branch HEAD を定期確認します。</p>
+                </div>
+                <v-switch
+                  v-model="form.github_trigger_enabled"
+                  color="primary"
+                  hide-details
+                  inset
+                  label="自動実行"
+                />
+              </div>
+
+              <v-expand-transition>
+                <div v-if="form.github_trigger_enabled" class="trigger-fields">
+                  <v-alert class="mb-5" color="info" icon="mdi-information-outline" variant="tonal">
+                    初回確認は現在の commit を基準として記録し、次の変更から実行します。
+                  </v-alert>
+
+                  <div class="form-grid">
+                    <v-text-field
+                      v-model="form.github_repository"
+                      label="GitHub リポジトリ"
+                      placeholder="owner/repository"
+                      prepend-inner-icon="mdi-github"
+                      :rules="[rules.required, rules.repository]"
+                      required
+                    />
+                    <v-text-field
+                      v-model="form.github_branch"
+                      label="監視ブランチ"
+                      placeholder="main"
+                      prepend-inner-icon="mdi-source-branch"
+                      :rules="[rules.required, rules.branch]"
+                      required
+                    />
+                    <v-text-field
+                      v-model="form.github_token"
+                      autocomplete="new-password"
+                      class="form-grid__wide"
+                      :hint="tokenHint"
+                      label="GitHub Personal Access Token（任意）"
+                      persistent-hint
+                      prepend-inner-icon="mdi-key-outline"
+                      type="password"
+                    />
+                  </div>
+                  <p class="trigger-note">
+                    private repository では、対象 repository の Contents 読み取り権限を持つ fine-grained
+                    token を指定してください。Token は暗号化され、画面や API には返りません。
+                  </p>
+                </div>
+              </v-expand-transition>
+            </section>
           </v-form>
         </v-card-text>
         <v-card-actions>
@@ -238,7 +313,18 @@ import { useRouter } from 'vue-router'
 import AppPageHeader from '@/components/AppPageHeader.vue'
 import { useJobStore } from '@/stores/job'
 import { useServerStore } from '@/stores/server'
-import type { JobWithServer, JobCreate, JobUpdate } from '@/types'
+import type { Job, JobWithServer, JobCreate, JobUpdate } from '@/types'
+
+interface JobForm {
+  name: string
+  description: string
+  script: string
+  server_id: number
+  github_trigger_enabled: boolean
+  github_repository: string
+  github_branch: string
+  github_token: string
+}
 
 const router = useRouter()
 const jobStore = useJobStore()
@@ -256,23 +342,39 @@ const editMode = ref(false)
 const saving = ref(false)
 const deleting = ref(false)
 const executing = ref(false)
+const saveError = ref<string | null>(null)
 const deleteTarget = ref<JobWithServer | null>(null)
 const executeTarget = ref<JobWithServer | null>(null)
 const formRef = ref()
 const currentJobId = ref<number | null>(null)
+const currentJobTokenConfigured = ref(false)
 
-const form = ref({
+const form = ref<JobForm>({
   name: '',
   description: '',
   script: '',
   server_id: 0,
+  github_trigger_enabled: false,
+  github_repository: '',
+  github_branch: 'main',
+  github_token: '',
 })
 
 const serverOptions = computed(() => servers.value.map((server) => ({ title: server.name, value: server.id })))
 
 const rules = {
   required: (value: unknown) => !!value || '必須項目です',
+  repository: (value: string) =>
+    /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/.test(value)
+    || 'owner/repository 形式で入力してください',
+  branch: (value: string) => !/\s/.test(value) || 'ブランチ名に空白は使用できません',
 }
+
+const tokenHint = computed(() =>
+  editMode.value && currentJobTokenConfigured.value
+    ? '設定済みです。変更する場合だけ新しい token を入力してください。'
+    : 'public repository では空欄でも利用できます。'
+)
 
 function clearErrors() {
   jobStore.clearError()
@@ -283,9 +385,22 @@ function formatDate(dateString: string): string {
   return new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium' }).format(new Date(dateString))
 }
 
+function formatPollingStatus(job: Job): string {
+  if (job.github_last_error) return job.github_last_error
+  if (!job.github_last_checked_at) return '初回確認待ち'
+  const checkedAt = new Intl.DateTimeFormat('ja-JP', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(new Date(job.github_last_checked_at))
+  const sha = job.github_last_commit_sha?.slice(0, 7)
+  return sha ? `最終確認 ${checkedAt} · ${sha}` : `最終確認 ${checkedAt}`
+}
+
 function openCreateDialog() {
   editMode.value = false
   currentJobId.value = null
+  currentJobTokenConfigured.value = false
+  saveError.value = null
   resetForm()
   dialog.value = true
 }
@@ -293,11 +408,17 @@ function openCreateDialog() {
 function openEditDialog(job: JobWithServer) {
   editMode.value = true
   currentJobId.value = job.id
+  currentJobTokenConfigured.value = job.github_token_configured
+  saveError.value = null
   form.value = {
     name: job.name,
     description: job.description || '',
     script: job.script,
     server_id: job.server_id,
+    github_trigger_enabled: job.trigger_type === 'github_poll',
+    github_repository: job.github_repository || '',
+    github_branch: job.github_branch || 'main',
+    github_token: '',
   }
   dialog.value = true
 }
@@ -308,6 +429,10 @@ function resetForm() {
     description: '',
     script: '',
     server_id: 0,
+    github_trigger_enabled: false,
+    github_repository: '',
+    github_branch: 'main',
+    github_token: '',
   }
 }
 
@@ -316,6 +441,15 @@ async function saveJob() {
   if (!valid) return
 
   saving.value = true
+  saveError.value = null
+  const triggerFields = form.value.github_trigger_enabled
+    ? {
+        trigger_type: 'github_poll' as const,
+        github_repository: form.value.github_repository,
+        github_branch: form.value.github_branch,
+        ...(form.value.github_token ? { github_token: form.value.github_token } : {}),
+      }
+    : { trigger_type: 'manual' as const }
   try {
     if (editMode.value && currentJobId.value) {
       const updateData: JobUpdate = {
@@ -323,6 +457,7 @@ async function saveJob() {
         description: form.value.description || undefined,
         script: form.value.script,
         server_id: form.value.server_id,
+        ...triggerFields,
       }
       await jobStore.updateJob(currentJobId.value, updateData)
     } else {
@@ -331,13 +466,14 @@ async function saveJob() {
         description: form.value.description || undefined,
         script: form.value.script,
         server_id: form.value.server_id,
+        ...triggerFields,
       }
       await jobStore.createJob(createData)
     }
     dialog.value = false
     resetForm()
   } catch (error) {
-    console.error('ジョブの保存に失敗しました:', error)
+    saveError.value = error instanceof Error ? error.message : 'ジョブの保存に失敗しました'
   } finally {
     saving.value = false
   }
@@ -484,6 +620,75 @@ onMounted(async () => {
 .job-card__actions {
   min-height: 62px;
   padding: 10px 16px !important;
+}
+
+.job-card__trigger {
+  margin-top: 14px;
+  padding: 11px 12px;
+  color: rgb(var(--v-theme-info));
+  background: rgba(var(--v-theme-info), 0.08);
+  border-radius: 10px;
+}
+
+.job-card__trigger--error {
+  color: rgb(var(--v-theme-error));
+  background: rgba(var(--v-theme-error), 0.08);
+}
+
+.job-card__trigger-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.job-card__trigger-heading strong {
+  overflow: hidden;
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-card__trigger > span {
+  display: block;
+  margin-top: 5px;
+  font-size: 0.67rem;
+}
+
+.trigger-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.trigger-heading h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1rem;
+}
+
+.trigger-heading p,
+.trigger-note {
+  color: rgb(var(--v-theme-on-surface-variant));
+  font-size: 0.76rem;
+  line-height: 1.6;
+}
+
+.trigger-heading p {
+  margin: 4px 0 0;
+}
+
+.trigger-fields {
+  margin-top: 16px;
+  padding: 18px;
+  background: rgb(var(--v-theme-surface-light));
+  border: 1px solid rgba(var(--v-border-color), 0.09);
+  border-radius: 14px;
+}
+
+.trigger-note {
+  margin: 4px 0 0;
 }
 
 .script-field :deep(textarea) {

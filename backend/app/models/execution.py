@@ -20,6 +20,13 @@ class ExecutionStatus(str, enum.Enum):
     CANCELLED = "cancelled"  # キャンセル
 
 
+class ExecutionTriggerSource(str, enum.Enum):
+    """実行を開始した契機"""
+
+    MANUAL = "manual"
+    GITHUB_POLL = "github_poll"
+
+
 class JobExecution(Base):
     """
     ジョブ実行履歴テーブル
@@ -45,6 +52,14 @@ class JobExecution(Base):
         index=True,
         comment="実行ステータス"
     )
+    trigger_source = Column(
+        SQLEnum(ExecutionTriggerSource),
+        nullable=False,
+        default=ExecutionTriggerSource.MANUAL,
+        server_default="MANUAL",
+        comment="実行契機",
+    )
+    trigger_commit_sha = Column(String(40), nullable=True, comment="実行契機となったcommit SHA")
     
     # 実行結果
     exit_code = Column(Integer, nullable=True, comment="終了コード")

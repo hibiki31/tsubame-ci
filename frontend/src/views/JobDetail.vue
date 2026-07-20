@@ -62,6 +62,17 @@
                   <strong>{{ formatDate(job.updated_at) }}</strong>
                 </div>
               </div>
+
+              <div class="detail-list__item">
+                <div class="detail-list__icon"><v-icon icon="mdi-source-branch" size="18" /></div>
+                <div>
+                  <span>実行トリガー</span>
+                  <strong>{{ job.trigger_type === 'github_poll' ? 'GitHub ブランチ変更' : '手動のみ' }}</strong>
+                  <small v-if="job.trigger_type === 'github_poll'">
+                    {{ job.github_repository }} · {{ job.github_branch }}
+                  </small>
+                </div>
+              </div>
             </v-card-text>
           </v-card>
         </v-col>
@@ -82,6 +93,17 @@
         </v-col>
       </v-row>
 
+      <v-alert
+        v-if="job.trigger_type === 'github_poll'"
+        class="mt-6"
+        :color="job.github_last_error ? 'error' : 'info'"
+        :icon="job.github_last_error ? 'mdi-alert-circle-outline' : 'mdi-source-branch-check'"
+        variant="tonal"
+      >
+        <strong>{{ job.github_repository }} · {{ job.github_branch }}</strong>
+        <div class="trigger-status">{{ getPollingStatus() }}</div>
+      </v-alert>
+
       <v-card class="panel-card table-card mt-6">
         <v-card-title class="panel-card__header">
           <div>
@@ -101,6 +123,17 @@
         >
           <template #item.status="{ item }">
             <ExecutionStatusChip :status="item.status" />
+          </template>
+
+          <template #item.trigger_source="{ item }">
+            <v-chip
+              :color="item.trigger_source === 'github_poll' ? 'info' : 'default'"
+              :prepend-icon="item.trigger_source === 'github_poll' ? 'mdi-github' : 'mdi-account-outline'"
+              size="small"
+              variant="tonal"
+            >
+              {{ item.trigger_source === 'github_poll' ? 'GitHub' : '手動' }}
+            </v-chip>
           </template>
 
           <template #item.created_at="{ item }">
@@ -215,6 +248,7 @@ const executeDialog = ref(false)
 
 const headers = [
   { title: 'ステータス', key: 'status', width: 150 },
+  { title: '実行元', key: 'trigger_source', width: 130 },
   { title: '実行日時', key: 'created_at', width: 210 },
   { title: '所要時間', key: 'duration', width: 140 },
   { title: '終了コード', key: 'exit_code', width: 120 },
@@ -239,6 +273,14 @@ function formatDuration(seconds: number | null): string {
   const minutes = Math.floor(seconds / 60)
   const secs = Math.floor(seconds % 60)
   return `${minutes}分 ${secs}秒`
+}
+
+function getPollingStatus(): string {
+  if (job.value?.github_last_error) return job.value.github_last_error
+  if (!job.value?.github_last_checked_at) return '初回確認待ちです'
+  const checkedAt = formatDate(job.value.github_last_checked_at)
+  const sha = job.value.github_last_commit_sha?.slice(0, 7)
+  return sha ? `最終確認: ${checkedAt}（${sha}）` : `最終確認: ${checkedAt}`
 }
 
 async function executeJob() {
@@ -325,6 +367,11 @@ onMounted(async () => {
 
 .script-card__body {
   padding: 8px 24px 24px !important;
+}
+
+.trigger-status {
+  margin-top: 4px;
+  font-size: 0.78rem;
 }
 
 .script-code {

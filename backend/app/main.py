@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.core.database import init_db
 from app.api.v1 import servers, jobs, executions
+from app.services.github_polling_service import GitHubPollingService
 from app.services.server_monitor import server_monitor
 from app import __version__
 
@@ -25,12 +26,18 @@ async def lifespan(app: FastAPI):
         # 本番環境ではAlembicマイグレーションを使用
         await init_db()
 
-    if settings.server_monitor_enabled:
-        server_monitor.start()
-
+    github_poller = None
     try:
+        if settings.server_monitor_enabled:
+            server_monitor.start()
+        if settings.github_polling_enabled:
+            github_poller = GitHubPollingService()
+            await github_poller.start()
+            app.state.github_poller = github_poller
         yield
     finally:
+        if github_poller:
+            await github_poller.stop()
         await server_monitor.stop()
 
 

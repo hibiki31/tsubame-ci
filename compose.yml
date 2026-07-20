@@ -33,6 +33,9 @@ services:
       ENCRYPTION_KEY: dev-encryption-key-change-in-production-32bytes
       ALLOWED_ORIGINS: http://localhost:3000,http://localhost:5173
       DEBUG: "True"
+      GITHUB_POLLING_ENABLED: "True"
+      GITHUB_POLL_INTERVAL_SECONDS: "60"
+      GITHUB_API_TIMEOUT_SECONDS: "10"
       SERVER_MONITOR_ENABLED: "True"
       SERVER_CHECK_INTERVAL_SECONDS: "300"
     ports:
@@ -42,7 +45,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: sh -c "python scripts/migrate.py && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     networks:
       - tsubame-network
 

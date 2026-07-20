@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     ssh_timeout: int = 300
     ssh_connect_timeout: int = 30
 
+    # GitHub ポーリング設定
+    github_polling_enabled: bool = True
+    github_poll_interval_seconds: int = Field(default=60, ge=10)
+    github_api_timeout_seconds: int = Field(default=10, ge=1)
+
     # サーバ監視設定
     server_monitor_enabled: bool = True
     server_check_interval_seconds: int = Field(300, ge=10, le=86400)
