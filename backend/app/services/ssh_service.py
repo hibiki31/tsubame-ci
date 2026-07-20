@@ -62,9 +62,12 @@ class SSHService:
                 private_key=private_key
             )
             
-            # 簡単なコマンドを実行して接続を確認
-            result = await conn.run("echo 'connection test'", check=True)
-            await conn.close()
+            try:
+                # 簡単なコマンドを実行して接続を確認
+                await conn.run("echo 'connection test'", check=True)
+            finally:
+                conn.close()
+                await conn.wait_closed()
             
             return True, "接続に成功しました"
             
@@ -126,14 +129,14 @@ class SSHService:
                 exit_code = result.exit_status if result.exit_status is not None else 0
                 stdout = result.stdout if result.stdout else ""
                 stderr = result.stderr if result.stderr else ""
-                
-                await conn.close()
-                
+
                 return exit_code, stdout, stderr
-                
+
             except asyncio.TimeoutError:
-                await conn.close()
                 raise SSHExecutionError(f"スクリプト実行がタイムアウトしました（{self.timeout}秒）")
+            finally:
+                conn.close()
+                await conn.wait_closed()
             
         except asyncssh.Error as e:
             raise SSHConnectionError(f"SSH接続エラー: {str(e)}")
