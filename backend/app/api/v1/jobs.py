@@ -5,9 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import List
 
 from app.schemas.job import JobCreate, JobUpdate, JobResponse
+from app.schemas.execution import ExecutionResponse
 from app.services.job_service import JobService, JobNotFoundError
 from app.services.server_service import ServerNotFoundError
-from app.api.deps import get_job_service
+from app.services.execution_service import ExecutionService
+from app.api.deps import get_job_service, get_execution_service
 
 router = APIRouter()
 
@@ -97,6 +99,27 @@ async def delete_job(
     """
     try:
         await service.delete(job_id)
+    except JobNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+
+
+@router.post("/{job_id}/execute", response_model=ExecutionResponse, status_code=status.HTTP_201_CREATED)
+async def execute_job(
+    job_id: int,
+    execution_service: ExecutionService = Depends(get_execution_service)
+):
+    """
+    ジョブを実行
+    
+    指定されたジョブを実行し、実行履歴を返す。
+    実際の実行は同期的に行われる。
+    """
+    try:
+        execution = await execution_service.create_and_execute(job_id)
+        return execution
     except JobNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

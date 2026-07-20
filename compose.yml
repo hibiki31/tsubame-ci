@@ -51,7 +51,7 @@ services:
       dockerfile: Dockerfile
     container_name: tsubame-ci-frontend
     ports:
-      - "8888:80"
+      - "30682:80"
     depends_on:
       - backend
     networks:
