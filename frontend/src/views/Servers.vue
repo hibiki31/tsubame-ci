@@ -1,14 +1,12 @@
 <template>
-  <div class="server-page">
-    <header class="d-flex flex-wrap justify-space-between align-start ga-4 mb-6">
-      <div>
-        <div class="text-overline text-medium-emphasis">INFRASTRUCTURE</div>
-        <h1 class="text-h4 font-weight-bold">サーバ管理</h1>
-        <p class="text-body-2 text-medium-emphasis mt-1 mb-0">
-          接続状態とマシン構成をひとつの画面で監視します。
-        </p>
-      </div>
-      <div class="d-flex align-center ga-3">
+  <div>
+    <AppPageHeader
+      eyebrow="Infrastructure"
+      icon="mdi-server-outline"
+      title="サーバ管理"
+      description="SSH接続先の稼働状態とマシン構成を一元管理します。認証情報は編集画面には再表示されません。"
+    >
+      <template #actions>
         <v-chip
           :color="monitoring?.enabled ? 'success' : 'default'"
           :prepend-icon="monitoring?.enabled ? 'mdi-radar' : 'mdi-radar-off'"
@@ -16,64 +14,75 @@
         >
           {{ monitoringLabel }}
         </v-chip>
-        <v-btn color="primary" prepend-icon="mdi-plus" @click="openCreateDialog">
-          サーバ追加
-        </v-btn>
-      </div>
-    </header>
+        <v-btn color="primary" prepend-icon="mdi-plus" @click="openCreateDialog">サーバを追加</v-btn>
+      </template>
+    </AppPageHeader>
 
-    <v-row class="mb-3" dense>
+    <v-row class="monitor-summary mb-6" dense>
       <v-col cols="6" sm="3">
-        <v-card class="summary-card" variant="outlined">
+        <v-card class="monitor-metric monitor-metric--registered">
           <v-card-text>
-            <div class="summary-label">登録</div>
-            <div class="summary-value">{{ servers.length }}</div>
+            <div class="monitor-metric__label">登録サーバ</div>
+            <div class="monitor-metric__value">{{ servers.length }}</div>
           </v-card-text>
         </v-card>
       </v-col>
       <v-col cols="6" sm="3">
-        <v-card class="summary-card summary-card--online" variant="outlined">
+        <v-card class="monitor-metric monitor-metric--online">
           <v-card-text>
-            <div class="summary-label">ONLINE</div>
-            <div class="summary-value">{{ onlineCount }}</div>
+            <div class="monitor-metric__label">ONLINE</div>
+            <div class="monitor-metric__value">{{ onlineCount }}</div>
           </v-card-text>
         </v-card>
       </v-col>
       <v-col cols="6" sm="3">
-        <v-card class="summary-card summary-card--offline" variant="outlined">
+        <v-card class="monitor-metric monitor-metric--offline">
           <v-card-text>
-            <div class="summary-label">OFFLINE</div>
-            <div class="summary-value">{{ offlineCount }}</div>
+            <div class="monitor-metric__label">OFFLINE</div>
+            <div class="monitor-metric__value">{{ offlineCount }}</div>
           </v-card-text>
         </v-card>
       </v-col>
       <v-col cols="6" sm="3">
-        <v-card class="summary-card summary-card--unknown" variant="outlined">
+        <v-card class="monitor-metric monitor-metric--unknown">
           <v-card-text>
-            <div class="summary-label">未確認</div>
-            <div class="summary-value">{{ unknownCount }}</div>
+            <div class="monitor-metric__label">未確認</div>
+            <div class="monitor-metric__value">{{ unknownCount }}</div>
           </v-card-text>
         </v-card>
       </v-col>
     </v-row>
 
     <v-alert
-      v-if="error"
-      class="mb-4"
-      type="error"
-      variant="tonal"
+      v-if="serverStore.error"
+      class="mb-6"
       closable
-      @click:close="serverStore.clearError"
+      color="error"
+      icon="mdi-server-off"
+      title="サーバ情報を取得できませんでした"
+      variant="tonal"
+      @click:close="serverStore.clearError()"
     >
-      {{ error }}
+      {{ serverStore.error }}
     </v-alert>
 
-    <v-card class="server-table" variant="outlined">
+    <v-card class="panel-card table-card">
+      <v-card-title class="panel-card__header">
+        <div>
+          <div class="panel-card__title">接続先と稼働状態</div>
+          <div class="panel-card__subtitle">行を展開するとハードウェアとソフトウェアの詳細を確認できます</div>
+        </div>
+        <v-chip color="primary" prepend-icon="mdi-shield-key-outline" size="small" variant="tonal">
+          認証情報は暗号化して保存
+        </v-chip>
+      </v-card-title>
+
       <v-data-table
         :headers="headers"
         :items="servers"
         :loading="loading"
         :items-per-page="15"
+        density="comfortable"
         item-value="id"
         show-expand
         hover
@@ -90,64 +99,63 @@
         </template>
 
         <template #item.name="{ item }">
-          <div class="py-2">
-            <div class="font-weight-bold">{{ item.name }}</div>
-            <div class="text-caption text-medium-emphasis server-description">
-              {{ item.description || '説明なし' }}
+          <div class="server-cell">
+            <div class="server-cell__icon" aria-hidden="true"><v-icon icon="mdi-server" size="18" /></div>
+            <div>
+              <div class="server-cell__name">{{ item.name }}</div>
+              <div class="server-cell__description">{{ item.description || '説明なし' }}</div>
             </div>
           </div>
         </template>
 
-        <template #item.host="{ item }">
-          <code class="connection-address">{{ item.username }}@{{ item.host }}:{{ item.port }}</code>
+        <template #item.endpoint="{ item }">
+          <code class="endpoint-cell">{{ item.username }}@{{ item.host }}:{{ item.port }}</code>
         </template>
 
         <template #item.environment="{ item }">
-          <div v-if="item.software_info || item.hardware_info" class="py-1">
+          <div v-if="item.software_info || item.hardware_info" class="environment-cell">
             <div>{{ item.software_info?.os_name || 'Linux' }}</div>
-            <div class="text-caption text-medium-emphasis">
-              {{ item.hardware_info?.architecture || 'architecture 未取得' }}
-            </div>
+            <div>{{ item.hardware_info?.architecture || 'architecture 未取得' }}</div>
           </div>
-          <span v-else class="text-medium-emphasis">—</span>
+          <span v-else class="date-cell">—</span>
         </template>
 
         <template #item.last_checked_at="{ item }">
-          <div v-if="item.last_checked_at" class="py-1">
+          <div v-if="item.last_checked_at" class="check-time-cell">
             <div>{{ formatRelativeDate(item.last_checked_at) }}</div>
-            <div class="text-caption text-medium-emphasis">
-              {{ item.last_check_latency_ms !== null ? `${item.last_check_latency_ms} ms` : '応答なし' }}
-            </div>
+            <div>{{ item.last_check_latency_ms !== null ? `${item.last_check_latency_ms} ms` : '応答なし' }}</div>
           </div>
-          <span v-else class="text-medium-emphasis">確認待ち</span>
+          <span v-else class="date-cell">確認待ち</span>
         </template>
 
         <template #item.actions="{ item }">
-          <div class="d-flex flex-nowrap justify-end">
+          <div class="action-group">
             <v-btn
+              :aria-label="`${item.name}を接続確認`"
+              class="icon-action"
               icon="mdi-refresh"
               size="small"
+              title="今すぐ接続確認"
               variant="text"
               :loading="checkingServerIds.includes(item.id)"
-              :aria-label="`${item.name}を接続確認`"
-              title="今すぐ接続確認"
               @click="checkServer(item)"
             />
             <v-btn
-              icon="mdi-pencil"
-              size="small"
-              variant="text"
               :aria-label="`${item.name}を編集`"
+              class="icon-action"
+              icon="mdi-pencil-outline"
+              size="small"
               title="編集"
+              variant="text"
               @click="openEditDialog(item)"
             />
             <v-btn
-              icon="mdi-delete"
-              size="small"
-              variant="text"
-              color="error"
               :aria-label="`${item.name}を削除`"
+              color="error"
+              icon="mdi-trash-can-outline"
+              size="small"
               title="削除"
+              variant="text"
               @click="confirmDelete(item)"
             />
           </div>
@@ -156,11 +164,11 @@
         <template #expanded-row="{ columns, item }">
           <tr class="inventory-row">
             <td :colspan="columns.length">
-              <div class="inventory-panel pa-4 pa-md-6">
-                <div class="d-flex flex-wrap justify-space-between align-center ga-2 mb-4">
+              <div class="inventory-panel">
+                <div class="inventory-panel__header">
                   <div>
-                    <div class="text-subtitle-1 font-weight-bold">{{ item.name }} のシステム情報</div>
-                    <div class="text-caption text-medium-emphasis">
+                    <div class="inventory-panel__title">{{ item.name }} のシステム情報</div>
+                    <div class="inventory-panel__subtitle">
                       構成取得: {{ item.inventory_collected_at ? formatDate(item.inventory_collected_at) : '未取得' }}
                     </div>
                   </div>
@@ -172,7 +180,8 @@
                 <v-alert
                   v-if="item.last_check_error"
                   class="mb-4"
-                  type="warning"
+                  color="warning"
+                  icon="mdi-alert-outline"
                   variant="tonal"
                   density="compact"
                 >
@@ -219,74 +228,141 @@
         </template>
 
         <template #no-data>
-          <div class="py-10 text-center">
-            <v-icon icon="mdi-server-off" size="36" class="mb-3 text-medium-emphasis" />
-            <div class="font-weight-medium">登録されたサーバはありません</div>
-            <div class="text-body-2 text-medium-emphasis mt-1">サーバを追加すると自動監視が始まります。</div>
-          </div>
+          <v-empty-state
+            class="empty-state"
+            icon="mdi-server-plus"
+            title="サーバが登録されていません"
+            text="最初のSSH接続先を登録すると、接続状態とシステム情報の自動確認が始まります。"
+          >
+            <template #actions>
+              <v-btn color="primary" prepend-icon="mdi-plus" @click="openCreateDialog">サーバを追加</v-btn>
+            </template>
+          </v-empty-state>
         </template>
       </v-data-table>
     </v-card>
 
-    <v-dialog v-model="dialog" max-width="600px">
-      <v-card>
-        <v-card-title>{{ editMode ? 'サーバ編集' : 'サーバ追加' }}</v-card-title>
+    <v-dialog v-model="dialog" max-width="760">
+      <v-card class="dialog-card">
+        <v-card-title>{{ editMode ? 'サーバを編集' : 'サーバを追加' }}</v-card-title>
+        <v-card-subtitle>
+          {{ editMode ? '接続情報を更新します。認証情報は変更する場合のみ入力してください。' : 'SSH接続に必要な情報を入力してください。' }}
+        </v-card-subtitle>
+        <v-divider />
         <v-card-text>
-          <v-form ref="formRef">
-            <v-text-field v-model="form.name" label="サーバ名" :rules="[rules.required]" required />
-            <v-textarea v-model="form.description" label="説明" rows="2" />
-            <v-text-field v-model="form.host" label="ホスト" :rules="[rules.required]" required />
-            <v-text-field
-              v-model.number="form.port"
-              label="ポート"
-              type="number"
-              :rules="[rules.required, rules.port]"
-              required
-            />
-            <v-text-field v-model="form.username" label="ユーザー名" :rules="[rules.required]" required />
-            <v-select
-              v-model="form.auth_method"
-              label="認証方式"
-              :items="authMethods"
-              :rules="[rules.required]"
-              required
-            />
-            <v-text-field
-              v-if="form.auth_method === 'password'"
-              v-model="form.password"
-              label="パスワード"
-              type="password"
-              :hint="editMode ? '変更する場合だけ入力してください' : undefined"
-              persistent-hint
-              :rules="editMode ? [] : [rules.required]"
-            />
-            <v-textarea
-              v-if="form.auth_method === 'key'"
-              v-model="form.private_key"
-              label="秘密鍵"
-              rows="4"
-              :hint="editMode ? '変更する場合だけ入力してください' : undefined"
-              persistent-hint
-              :rules="editMode ? [] : [rules.required]"
-            />
+          <v-form ref="formRef" @submit.prevent="saveServer">
+            <div class="form-grid">
+              <v-text-field
+                v-model="form.name"
+                class="form-grid__wide"
+                label="サーバ名"
+                placeholder="Production Web 01"
+                :rules="[rules.required]"
+                required
+              />
+
+              <v-textarea
+                v-model="form.description"
+                class="form-grid__wide"
+                label="説明（任意）"
+                placeholder="用途や管理担当など"
+                rows="2"
+              />
+
+              <v-text-field
+                v-model="form.host"
+                label="ホスト"
+                placeholder="192.0.2.10"
+                :rules="[rules.required]"
+                required
+              />
+
+              <v-text-field
+                v-model.number="form.port"
+                label="ポート"
+                min="1"
+                max="65535"
+                type="number"
+                :rules="[rules.required, rules.port]"
+                required
+              />
+
+              <v-text-field
+                v-model="form.username"
+                autocomplete="username"
+                label="ユーザー名"
+                :rules="[rules.required]"
+                required
+              />
+
+              <v-select
+                v-model="form.auth_method"
+                label="認証方式"
+                :items="authMethods"
+                :rules="[rules.required]"
+                required
+              />
+
+              <v-text-field
+                v-if="form.auth_method === 'password'"
+                v-model="form.password"
+                autocomplete="new-password"
+                class="form-grid__wide"
+                :hint="editMode ? '変更しない場合は空欄のままにしてください' : undefined"
+                label="パスワード"
+                :persistent-hint="editMode"
+                :rules="editMode ? [] : [rules.required]"
+                :type="passwordVisible ? 'text' : 'password'"
+              >
+                <template #append-inner>
+                  <v-btn
+                    :aria-label="passwordVisible ? 'パスワードを隠す' : 'パスワードを表示'"
+                    :icon="passwordVisible ? 'mdi-eye-off-outline' : 'mdi-eye-outline'"
+                    size="x-small"
+                    variant="text"
+                    @click="passwordVisible = !passwordVisible"
+                  />
+                </template>
+              </v-text-field>
+
+              <v-textarea
+                v-if="form.auth_method === 'key'"
+                v-model="form.private_key"
+                class="form-grid__wide private-key-field"
+                :hint="editMode ? '変更しない場合は空欄のままにしてください' : 'PEM形式の秘密鍵を貼り付けてください'"
+                label="秘密鍵"
+                persistent-hint
+                rows="7"
+                :rules="editMode ? [] : [rules.required]"
+              />
+            </div>
           </v-form>
         </v-card-text>
         <v-card-actions>
           <v-spacer />
-          <v-btn @click="dialog = false">キャンセル</v-btn>
-          <v-btn color="primary" :loading="saving" @click="saveServer">保存</v-btn>
+          <v-btn variant="text" @click="dialog = false">キャンセル</v-btn>
+          <v-btn color="primary" prepend-icon="mdi-content-save-outline" :loading="saving" @click="saveServer">
+            保存
+          </v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
 
-    <v-dialog v-model="deleteDialog" max-width="400px">
-      <v-card>
-        <v-card-title>サーバの削除</v-card-title>
-        <v-card-text>本当に「{{ deleteTarget?.name }}」を削除しますか？</v-card-text>
+    <v-dialog v-model="deleteDialog" max-width="460">
+      <v-card class="dialog-card">
+        <v-card-title>サーバを削除しますか？</v-card-title>
+        <v-card-subtitle>この操作は取り消せません。</v-card-subtitle>
+        <v-card-text>
+          <v-alert color="error" icon="mdi-alert-outline" variant="tonal">
+            「{{ deleteTarget?.name }}」を登録済み接続先から削除します。
+          </v-alert>
+        </v-card-text>
         <v-card-actions>
           <v-spacer />
-          <v-btn @click="deleteDialog = false">キャンセル</v-btn>
-          <v-btn color="error" :loading="deleting" @click="deleteServer">削除</v-btn>
+          <v-btn variant="text" @click="deleteDialog = false">キャンセル</v-btn>
+          <v-btn color="error" prepend-icon="mdi-trash-can-outline" :loading="deleting" @click="deleteServer">
+            削除
+          </v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -295,19 +371,19 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import AppPageHeader from '@/components/AppPageHeader.vue'
 import { useServerStore } from '@/stores/server'
 import type {
   AuthMethod,
   Server,
   ServerConnectionStatus,
   ServerCreate,
-  ServerUpdate
+  ServerUpdate,
 } from '@/types'
 
 const serverStore = useServerStore()
 const servers = computed(() => serverStore.servers)
 const loading = computed(() => serverStore.loading)
-const error = computed(() => serverStore.error)
 const monitoring = computed(() => serverStore.monitoring)
 const onlineCount = computed(() => servers.value.filter(server => server.connection_status === 'online').length)
 const offlineCount = computed(() => servers.value.filter(server => server.connection_status === 'offline').length)
@@ -323,8 +399,10 @@ const deleteDialog = ref(false)
 const editMode = ref(false)
 const saving = ref(false)
 const deleting = ref(false)
+const passwordVisible = ref(false)
 const deleteTarget = ref<Server | null>(null)
 const formRef = ref()
+const currentServerId = ref<number | null>(null)
 const checkingServerIds = ref<number[]>([])
 let refreshTimer: ReturnType<typeof setInterval> | undefined
 
@@ -336,40 +414,42 @@ const form = ref({
   username: '',
   auth_method: 'password' as AuthMethod,
   password: '',
-  private_key: ''
+  private_key: '',
 })
-const currentServerId = ref<number | null>(null)
 
 const headers = [
   { title: '状態', key: 'connection_status', width: 128 },
-  { title: 'サーバ', key: 'name', minWidth: 180 },
-  { title: '接続先', key: 'host', minWidth: 220 },
+  { title: 'サーバ', key: 'name', minWidth: 220 },
+  { title: '接続先', key: 'endpoint', minWidth: 220 },
   { title: '環境', key: 'environment', minWidth: 150, sortable: false },
   { title: '最終確認', key: 'last_checked_at', minWidth: 150 },
-  { title: '', key: 'actions', align: 'end' as const, sortable: false, width: 136 }
+  { title: '', key: 'actions', sortable: false, align: 'end' as const, width: 136 },
 ]
 
 const authMethods = [
   { title: 'パスワード', value: 'password' },
-  { title: '秘密鍵', value: 'key' }
+  { title: '秘密鍵', value: 'key' },
 ]
 
 const rules = {
   required: (value: unknown) => !!value || '必須項目です',
-  port: (value: number) => (value >= 1 && value <= 65535) || '1〜65535で入力してください'
+  port: (value: number) => (value >= 1 && value <= 65535) || '1〜65535で入力してください',
 }
 
 function statusMeta(status: ServerConnectionStatus) {
   const metadata = {
     online: { label: 'ONLINE', color: 'success', icon: 'mdi-check-circle' },
     offline: { label: 'OFFLINE', color: 'error', icon: 'mdi-alert-circle' },
-    unknown: { label: '未確認', color: 'default', icon: 'mdi-help-circle' }
+    unknown: { label: '未確認', color: 'default', icon: 'mdi-help-circle' },
   }
   return metadata[status]
 }
 
 function formatDate(dateString: string): string {
-  return new Date(dateString).toLocaleString('ja-JP')
+  return new Intl.DateTimeFormat('ja-JP', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(dateString))
 }
 
 function formatRelativeDate(dateString: string): string {
@@ -411,6 +491,7 @@ function osLabel(server: Server): string {
 function openCreateDialog() {
   editMode.value = false
   currentServerId.value = null
+  passwordVisible.value = false
   resetForm()
   dialog.value = true
 }
@@ -418,6 +499,7 @@ function openCreateDialog() {
 function openEditDialog(server: Server) {
   editMode.value = true
   currentServerId.value = server.id
+  passwordVisible.value = false
   form.value = {
     name: server.name,
     description: server.description || '',
@@ -426,7 +508,7 @@ function openEditDialog(server: Server) {
     username: server.username,
     auth_method: server.auth_method,
     password: '',
-    private_key: ''
+    private_key: '',
   }
   dialog.value = true
 }
@@ -440,7 +522,7 @@ function resetForm() {
     username: '',
     auth_method: 'password',
     password: '',
-    private_key: ''
+    private_key: '',
   }
 }
 
@@ -457,7 +539,7 @@ async function saveServer() {
         host: form.value.host,
         port: form.value.port,
         username: form.value.username,
-        auth_method: form.value.auth_method
+        auth_method: form.value.auth_method,
       }
       if (form.value.password) updateData.password = form.value.password
       if (form.value.private_key) updateData.private_key = form.value.private_key
@@ -471,14 +553,14 @@ async function saveServer() {
         username: form.value.username,
         auth_method: form.value.auth_method,
         password: form.value.password || undefined,
-        private_key: form.value.private_key || undefined
+        private_key: form.value.private_key || undefined,
       }
       await serverStore.createServer(createData)
     }
     dialog.value = false
     resetForm()
-  } catch (saveError) {
-    console.error('サーバの保存に失敗しました:', saveError)
+  } catch (error) {
+    console.error('サーバの保存に失敗しました:', error)
   } finally {
     saving.value = false
   }
@@ -489,8 +571,8 @@ async function checkServer(server: Server) {
   checkingServerIds.value = [...checkingServerIds.value, server.id]
   try {
     await serverStore.checkServer(server.id)
-  } catch (checkError) {
-    console.error('サーバの接続確認に失敗しました:', checkError)
+  } catch (error) {
+    console.error('サーバの接続確認に失敗しました:', error)
   } finally {
     checkingServerIds.value = checkingServerIds.value.filter(id => id !== server.id)
   }
@@ -503,13 +585,14 @@ function confirmDelete(server: Server) {
 
 async function deleteServer() {
   if (!deleteTarget.value) return
+
   deleting.value = true
   try {
     await serverStore.deleteServer(deleteTarget.value.id)
     deleteDialog.value = false
     deleteTarget.value = null
-  } catch (deleteError) {
-    console.error('サーバの削除に失敗しました:', deleteError)
+  } catch (error) {
+    console.error('サーバの削除に失敗しました:', error)
   } finally {
     deleting.value = false
   }
@@ -518,13 +601,13 @@ async function deleteServer() {
 onMounted(async () => {
   try {
     await Promise.all([serverStore.fetchServers(), serverStore.fetchMonitoring()])
-  } catch (fetchError) {
-    console.error('サーバ監視情報の取得に失敗しました:', fetchError)
+  } catch (error) {
+    console.error('サーバ監視情報の取得に失敗しました:', error)
   }
 
   refreshTimer = setInterval(() => {
-    serverStore.fetchServers(true).catch(refreshError => {
-      console.error('サーバ監視情報の更新に失敗しました:', refreshError)
+    serverStore.fetchServers(true).catch(error => {
+      console.error('サーバ監視情報の更新に失敗しました:', error)
     })
   }, 30000)
 })
@@ -535,97 +618,175 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.server-page {
-  --monitor-online: #15805d;
-  --monitor-offline: #c33d45;
-  --monitor-unknown: #707782;
-  max-width: 1600px;
-  margin: 0 auto;
+.monitor-metric {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(var(--v-border-color), 0.1) !important;
+  box-shadow: 0 10px 28px rgba(23, 61, 59, 0.035) !important;
 }
 
-.summary-card {
-  border-top: 3px solid rgb(var(--v-theme-primary));
+.monitor-metric::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: rgb(var(--v-theme-primary));
+  content: '';
 }
 
-.summary-card--online {
-  border-top-color: var(--monitor-online);
+.monitor-metric--online::before {
+  background: rgb(var(--v-theme-success));
 }
 
-.summary-card--offline {
-  border-top-color: var(--monitor-offline);
+.monitor-metric--offline::before {
+  background: rgb(var(--v-theme-error));
 }
 
-.summary-card--unknown {
-  border-top-color: var(--monitor-unknown);
+.monitor-metric--unknown::before {
+  background: rgb(var(--v-theme-on-surface-variant));
 }
 
-.summary-label {
+.monitor-metric__label {
   color: rgb(var(--v-theme-on-surface-variant));
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.09em;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.summary-value {
-  margin-top: 0.2rem;
+.monitor-metric__value {
+  margin-top: 3px;
+  color: rgb(var(--v-theme-on-surface));
+  font-family: var(--font-display);
   font-size: clamp(1.65rem, 4vw, 2.2rem);
   font-variant-numeric: tabular-nums;
-  font-weight: 700;
+  font-weight: 750;
   line-height: 1.1;
 }
 
-.server-table {
-  overflow: hidden;
+.server-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 220px;
+  padding-block: 5px;
 }
 
-.server-description {
-  max-width: 28ch;
+.server-cell__icon {
+  display: grid;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  color: rgb(var(--v-theme-primary));
+  background: rgb(var(--v-theme-primary-soft));
+  border-radius: 10px;
+}
+
+.server-cell__name {
+  font-weight: 750;
+}
+
+.server-cell__description {
+  max-width: 240px;
+  margin-top: 2px;
   overflow: hidden;
+  color: rgb(var(--v-theme-on-surface-variant));
+  font-size: 0.74rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.connection-address {
-  padding: 0.25rem 0.45rem;
-  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
-  border-radius: 4px;
-  background: rgba(var(--v-theme-on-surface), 0.035);
-  font-size: 0.78rem;
+.endpoint-cell {
+  padding: 5px 8px;
+  color: rgb(var(--v-theme-primary));
+  background: rgb(var(--v-theme-primary-soft));
+  border-radius: 7px;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+
+.environment-cell,
+.check-time-cell {
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.environment-cell > :last-child,
+.check-time-cell > :last-child {
+  margin-top: 2px;
+  color: rgb(var(--v-theme-on-surface-variant));
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.date-cell {
+  color: rgb(var(--v-theme-on-surface-variant));
+  font-variant-numeric: tabular-nums;
+}
+
+.action-group {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
 }
 
 .inventory-row {
-  background: rgba(var(--v-theme-primary), 0.035);
+  background: rgba(var(--v-theme-primary), 0.025);
 }
 
 .inventory-panel {
-  border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  padding: 24px;
+  border-top: 1px solid rgba(var(--v-border-color), 0.08);
+}
+
+.inventory-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.inventory-panel__title {
+  color: rgb(var(--v-theme-on-surface));
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 750;
+}
+
+.inventory-panel__subtitle {
+  margin-top: 3px;
+  color: rgb(var(--v-theme-on-surface-variant));
+  font-size: 0.74rem;
 }
 
 .inventory-section {
   height: 100%;
-  padding: 1rem;
-  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
-  border-radius: 8px;
+  padding: 18px;
+  border: 1px solid rgba(var(--v-border-color), 0.1);
+  border-radius: 14px;
   background: rgb(var(--v-theme-surface));
 }
 
 .inventory-title {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.9rem;
-  font-size: 0.82rem;
+  gap: 8px;
+  margin: 0 0 14px;
+  color: rgb(var(--v-theme-primary));
+  font-size: 0.76rem;
   font-weight: 800;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .detail-list {
   display: grid;
   grid-template-columns: minmax(7rem, 0.7fr) minmax(0, 1.6fr);
-  gap: 0.55rem 1rem;
+  gap: 9px 16px;
   margin: 0;
-  font-size: 0.86rem;
+  font-size: 0.82rem;
 }
 
 .detail-list dt {
@@ -636,17 +797,35 @@ onBeforeUnmount(() => {
   min-width: 0;
   margin: 0;
   overflow-wrap: anywhere;
-  font-weight: 500;
+  font-weight: 650;
 }
 
-@media (max-width: 600px) {
+.private-key-field :deep(textarea) {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
+@media (max-width: 599px) {
+  .monitor-summary :deep(.v-card-text) {
+    padding: 16px;
+  }
+
+  .inventory-panel {
+    padding: 18px;
+  }
+
+  .inventory-panel__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .detail-list {
     grid-template-columns: 1fr;
-    gap: 0.15rem;
+    gap: 2px;
   }
 
   .detail-list dd {
-    margin-bottom: 0.65rem;
+    margin-bottom: 10px;
   }
 }
 </style>
