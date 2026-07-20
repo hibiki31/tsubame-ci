@@ -1,0 +1,2 @@
+# Preserve vendored skill references verbatim; upstream Markdown may use trailing spaces.
+.agents/skills/*/references/** -whitespace
