@@ -2,6 +2,7 @@
 アプリケーション設定
 環境変数から設定を読み込む
 """
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
 
@@ -29,6 +30,11 @@ class Settings(BaseSettings):
     # SSH設定
     ssh_timeout: int = 300
     ssh_connect_timeout: int = 30
+
+    # GitHub ポーリング設定
+    github_polling_enabled: bool = True
+    github_poll_interval_seconds: int = Field(default=60, ge=10)
+    github_api_timeout_seconds: int = Field(default=10, ge=1)
     
     model_config = SettingsConfigDict(
         env_file=".env",

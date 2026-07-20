@@ -8,7 +8,7 @@ docker compose ps
 docker compose logs -f backend frontend
 ```
 
-- UI: `http://localhost:8888`
+- UI: `http://localhost:30682`
 - API / OpenAPI UI: `http://localhost:8000` / `http://localhost:8000/docs`
 - `compose.yml` の値は開発用である。本番では secret、DB credential、CORS、Debug を必ず差し替える。
 - service に固定 `container_name` があるため、既存環境や別 worktree と併用する前に衝突を確認する。
@@ -23,8 +23,19 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
+python scripts/migrate.py
 uvicorn app.main:app --reload
 ```
+
+`scripts/migrate.py` は database の状態を判定する。空 database では `alembic upgrade head`、Alembic 導入前の既存 MVP database では `0001_existing_schema_baseline` を stamp してから差分を適用する。GitHub trigger column がすでに `create_all()` で作成済みなら head を stamp する。一部の column だけが存在する不整合状態では自動処理せず停止する。
+
+## GitHubトリガー設定
+
+- `GITHUB_POLLING_ENABLED`: アプリ内ポーラーの有効/無効。既定 `True`。
+- `GITHUB_POLL_INTERVAL_SECONDS`: 確認間隔。既定 60 秒、最小 10 秒。
+- `GITHUB_API_TIMEOUT_SECONDS`: GitHub API timeout。既定 10 秒。
+- private repository は Job 編集画面で fine-grained PAT を登録する。必要権限は対象 repository の Contents: Read。PAT は保存後に再表示されない。
+- 監視対象を変更すると基準 SHA と ETag をリセットする。次回の初回確認では自動実行しない。
 
 Frontend は Backend を `localhost:8000` で起動して使用する。
 
@@ -51,4 +62,4 @@ cd frontend && npm ci && npm run build
 git diff --check
 ```
 
-現在は test suite、coverage、Backend lint/type-check、Alembic 環境がない。検証できない項目は成功扱いにせず、理由と影響を報告する。
+Backend は標準 `unittest` の小規模な service test がある。coverage、Backend lint/type-check、Frontend test は未整備である。検証できない項目は成功扱いにせず、理由と影響を報告する。

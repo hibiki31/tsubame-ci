@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.core.database import init_db
 from app.api.v1 import servers, jobs, executions
+from app.services.github_polling_service import GitHubPollingService
 
 
 @asynccontextmanager
@@ -22,11 +23,18 @@ async def lifespan(app: FastAPI):
         # 開発環境ではテーブルを自動作成
         # 本番環境ではAlembicマイグレーションを使用
         await init_db()
-    
-    yield
-    
-    # 終了時の処理
-    pass
+
+    github_poller = None
+    if settings.github_polling_enabled:
+        github_poller = GitHubPollingService()
+        await github_poller.start()
+        app.state.github_poller = github_poller
+
+    try:
+        yield
+    finally:
+        if github_poller:
+            await github_poller.stop()
 
 
 # FastAPIアプリケーションの作成

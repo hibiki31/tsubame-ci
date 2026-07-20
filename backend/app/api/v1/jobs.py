@@ -4,9 +4,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import List
 
-from app.schemas.job import JobCreate, JobUpdate, JobResponse
+from app.schemas.job import JobCreate, JobUpdate, JobResponse, JobWithServerResponse
 from app.schemas.execution import ExecutionResponse
-from app.services.job_service import JobService, JobNotFoundError
+from app.services.job_service import (
+    JobService,
+    JobNotFoundError,
+    JobTriggerConfigurationError,
+)
 from app.services.server_service import ServerNotFoundError
 from app.services.execution_service import ExecutionService
 from app.api.deps import get_job_service, get_execution_service
@@ -14,7 +18,7 @@ from app.api.deps import get_job_service, get_execution_service
 router = APIRouter()
 
 
-@router.get("", response_model=List[JobResponse])
+@router.get("", response_model=List[JobWithServerResponse])
 async def list_jobs(
     server_id: int | None = Query(None, description="サーバIDでフィルタ"),
     service: JobService = Depends(get_job_service)
@@ -23,13 +27,13 @@ async def list_jobs(
     ジョブ一覧を取得
     """
     if server_id:
-        jobs = await service.get_by_server_id(server_id)
+        jobs = await service.get_by_server_id(server_id, include_server=True)
     else:
-        jobs = await service.get_all()
+        jobs = await service.get_all(include_server=True)
     return jobs
 
 
-@router.get("/{job_id}", response_model=JobResponse)
+@router.get("/{job_id}", response_model=JobWithServerResponse)
 async def get_job(
     job_id: int,
     service: JobService = Depends(get_job_service)
@@ -38,7 +42,7 @@ async def get_job(
     ジョブ詳細を取得
     """
     try:
-        job = await service.get_by_id(job_id)
+        job = await service.get_by_id(job_id, include_server=True)
         return job
     except JobNotFoundError as e:
         raise HTTPException(
@@ -62,6 +66,11 @@ async def create_job(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
+        )
+    except JobTriggerConfigurationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e),
         )
 
 
@@ -87,6 +96,11 @@ async def update_job(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
         )
+    except JobTriggerConfigurationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e),
+        )
 
 
 @router.delete("/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -103,6 +117,25 @@ async def delete_job(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
+        )
+
+
+@router.get("/{job_id}/executions", response_model=List[ExecutionResponse])
+async def list_job_executions(
+    job_id: int,
+    limit: int = Query(50, ge=1, le=500, description="取得件数"),
+    job_service: JobService = Depends(get_job_service),
+    execution_service: ExecutionService = Depends(get_execution_service),
+):
+    """指定ジョブの実行履歴を取得する。"""
+
+    try:
+        await job_service.get_by_id(job_id)
+        return await execution_service.get_by_job_id(job_id, limit=limit)
+    except JobNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
         )
 
 

@@ -41,8 +41,30 @@
             <div v-if="job.updated_at" class="mb-2">
               <strong>更新日:</strong> {{ formatDate(job.updated_at) }}
             </div>
+            <div class="mb-2">
+              <strong>実行トリガー:</strong>
+              {{ job.trigger_type === 'github_poll' ? 'GitHub ブランチ変更' : '手動のみ' }}
+            </div>
           </v-col>
         </v-row>
+
+        <v-alert
+          v-if="job.trigger_type === 'github_poll'"
+          :type="job.github_last_error ? 'error' : 'info'"
+          variant="tonal"
+          class="mt-3"
+        >
+          <div class="font-weight-medium">
+            <v-icon icon="mdi-source-branch" size="small" class="mr-1" />
+            {{ job.github_repository }} · {{ job.github_branch }}
+          </div>
+          <div v-if="job.github_last_error" class="text-body-2 mt-1">
+            {{ job.github_last_error }}
+          </div>
+          <div v-else class="text-body-2 mt-1">
+            {{ getPollingStatus() }}
+          </div>
+        </v-alert>
 
         <v-divider class="my-4"></v-divider>
 
@@ -74,6 +96,16 @@
 
           <template v-slot:item.created_at="{ item }">
             {{ formatDate(item.created_at) }}
+          </template>
+
+          <template v-slot:item.trigger_source="{ item }">
+            <v-chip
+              :color="item.trigger_source === 'github_poll' ? 'info' : 'default'"
+              size="small"
+              variant="tonal"
+            >
+              {{ item.trigger_source === 'github_poll' ? 'GitHub' : '手動' }}
+            </v-chip>
           </template>
 
           <template v-slot:item.duration="{ item }">
@@ -114,6 +146,7 @@ const executing = ref(false)
 
 const headers = [
   { title: 'ステータス', key: 'status' },
+  { title: '実行元', key: 'trigger_source' },
   { title: '実行日時', key: 'created_at' },
   { title: '実行時間', key: 'duration' },
   { title: '終了コード', key: 'exit_code' },
@@ -126,6 +159,7 @@ function getStatusColor(status: ExecutionStatus): string {
     case 'failed': return 'error'
     case 'running': return 'info'
     case 'pending': return 'warning'
+    case 'timeout': return 'error'
     default: return 'grey'
   }
 }
@@ -136,9 +170,17 @@ function getStatusText(status: ExecutionStatus): string {
     case 'failed': return '失敗'
     case 'running': return '実行中'
     case 'pending': return '待機中'
+    case 'timeout': return 'タイムアウト'
     case 'cancelled': return 'キャンセル'
     default: return status
   }
+}
+
+function getPollingStatus(): string {
+  if (!job.value?.github_last_checked_at) return '初回確認待ちです'
+  const checkedAt = formatDate(job.value.github_last_checked_at)
+  const sha = job.value.github_last_commit_sha?.slice(0, 7)
+  return sha ? `最終確認: ${checkedAt}（${sha}）` : `最終確認: ${checkedAt}`
 }
 
 function formatDate(dateString: string): string {

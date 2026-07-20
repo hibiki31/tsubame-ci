@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional
 from datetime import datetime
 
-from app.models.execution import ExecutionStatus
+from app.models.execution import ExecutionStatus, ExecutionTriggerSource
 
 
 # レスポンススキーマ
@@ -15,6 +15,8 @@ class ExecutionResponse(BaseModel):
     id: int
     job_id: int
     status: ExecutionStatus
+    trigger_source: ExecutionTriggerSource
+    trigger_commit_sha: Optional[str] = None
     exit_code: Optional[int] = None
     stdout: Optional[str] = None
     stderr: Optional[str] = None
