@@ -20,7 +20,8 @@ from app.core.database import engine
 INITIAL_REVISION = "0001_initial_schema"
 SERVER_REVISION = "0002_server_monitoring"
 GITHUB_REVISION = "0003_add_github_job_triggers"
-HEAD_REVISION = "0004_resumable_remote_executions"
+RESUMABLE_REVISION = "0004_resumable_remote_executions"
+HEAD_REVISION = "0005_shared_github_token"
 LEGACY_TRIGGER_BASELINE = "0001_existing_schema_baseline"
 LEGACY_TRIGGER_REVISION = "0002_add_github_job_triggers"
 CORE_TABLES = {"servers", "jobs", "job_executions"}
@@ -55,6 +56,13 @@ RESUMABLE_EXECUTION_COLUMNS = {
     "tracking_error",
     "cancel_requested_at",
 }
+SHARED_GITHUB_JOB_COLUMNS = {"github_token_source"}
+SHARED_GITHUB_TOKEN_COLUMNS = {
+    "id",
+    "token_encrypted",
+    "created_at",
+    "updated_at",
+}
 
 
 @dataclass(frozen=True)
@@ -64,16 +72,19 @@ class SchemaState:
     has_server_monitoring: bool
     has_github_triggers: bool
     has_resumable_executions: bool
+    has_shared_github_token: bool
 
 
 async def detect_schema_state() -> SchemaState:
     async with engine.connect() as connection:
-        def inspect_schema(sync_connection) -> tuple[bool, bool, bool, bool]:
+        def inspect_schema(
+            sync_connection,
+        ) -> tuple[bool, bool, bool, bool, bool]:
             inspector = inspect(sync_connection)
             tables = set(inspector.get_table_names())
             present_core_tables = tables & CORE_TABLES
             if not present_core_tables:
-                return True, False, False, False
+                return True, False, False, False, False
             if present_core_tables != CORE_TABLES:
                 missing = ", ".join(sorted(CORE_TABLES - present_core_tables))
                 raise RuntimeError(
@@ -97,6 +108,15 @@ async def detect_schema_state() -> SchemaState:
             resumable_execution_present = (
                 execution_columns & RESUMABLE_EXECUTION_COLUMNS
             )
+            shared_job_present = job_columns & SHARED_GITHUB_JOB_COLUMNS
+            shared_token_columns = (
+                {
+                    column["name"]
+                    for column in inspector.get_columns("github_tokens")
+                }
+                if "github_tokens" in tables
+                else set()
+            )
             if server_present and server_present != SERVER_MONITOR_COLUMNS:
                 raise RuntimeError("サーバ監視columnが一部だけ存在します")
             if (
@@ -118,11 +138,25 @@ async def detect_schema_state() -> SchemaState:
                 raise RuntimeError(
                     "再追跡実行columnにはGitHubトリガーcolumnが必要です"
                 )
+            if (
+                shared_job_present
+                and shared_job_present != SHARED_GITHUB_JOB_COLUMNS
+            ):
+                raise RuntimeError("共有GitHubトークンcolumnが一部だけ存在します")
+            if (
+                shared_token_columns
+                and shared_token_columns != SHARED_GITHUB_TOKEN_COLUMNS
+            ):
+                raise RuntimeError("共有GitHubトークンtableが不完全です")
             return (
                 False,
                 server_present == SERVER_MONITOR_COLUMNS,
                 trigger_job_present == GITHUB_JOB_COLUMNS,
                 resumable_execution_present == RESUMABLE_EXECUTION_COLUMNS,
+                (
+                    shared_job_present == SHARED_GITHUB_JOB_COLUMNS
+                    and shared_token_columns == SHARED_GITHUB_TOKEN_COLUMNS
+                ),
             )
 
         (
@@ -130,6 +164,7 @@ async def detect_schema_state() -> SchemaState:
             has_server_monitoring,
             has_github_triggers,
             has_resumable_executions,
+            has_shared_github_token,
         ) = (
             await connection.run_sync(inspect_schema)
         )
@@ -157,6 +192,7 @@ async def detect_schema_state() -> SchemaState:
         has_server_monitoring=has_server_monitoring,
         has_github_triggers=has_github_triggers,
         has_resumable_executions=has_resumable_executions,
+        has_shared_github_token=has_shared_github_token,
     )
 
 
@@ -168,7 +204,11 @@ def upgrade_legacy_schema(config: Config, state: SchemaState) -> None:
     """Alembic 導入前 schema を、存在する column に合わせて baseline 化する。"""
 
     if state.has_resumable_executions:
-        stamp(config, HEAD_REVISION)
+        if state.has_shared_github_token:
+            stamp(config, HEAD_REVISION)
+        else:
+            stamp(config, RESUMABLE_REVISION)
+            command.upgrade(config, "head")
     elif state.has_server_monitoring and state.has_github_triggers:
         stamp(config, GITHUB_REVISION)
         command.upgrade(config, "head")
@@ -193,10 +233,15 @@ def main() -> None:
     if state.empty:
         command.upgrade(config, "head")
         return
+    if state.revision == HEAD_REVISION and not state.has_shared_github_token:
+        raise RuntimeError(
+            "Alembic revisionは共有GitHubトークン対応済みですがschemaが不完全です"
+        )
     if state.revision in {
         INITIAL_REVISION,
         SERVER_REVISION,
         GITHUB_REVISION,
+        RESUMABLE_REVISION,
         HEAD_REVISION,
     }:
         command.upgrade(config, "head")

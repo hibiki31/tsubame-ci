@@ -26,6 +26,23 @@ class OpenAPITest(unittest.TestCase):
         self.assertIn("tracking_error", properties)
         self.assertIn("cancel_requested_at", properties)
 
+    def test_shared_github_token_response_never_exposes_token_value(self) -> None:
+        schema = app.openapi()
+        properties = schema["components"]["schemas"][
+            "GitHubTokenResponse"
+        ]["properties"]
+
+        self.assertIn("/api/v1/github-token", schema["paths"])
+        self.assertEqual(set(properties), {"configured", "updated_at"})
+
+    def test_job_response_exposes_token_source_not_token_value(self) -> None:
+        properties = app.openapi()["components"]["schemas"][
+            "JobResponse"
+        ]["properties"]
+
+        self.assertIn("github_token_source", properties)
+        self.assertNotIn("github_token", properties)
+
 
 if __name__ == "__main__":
     unittest.main()

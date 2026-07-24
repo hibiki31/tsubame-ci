@@ -5,7 +5,7 @@
 import axios from 'axios'
 import type { 
   Server, ServerCreate, ServerUpdate, ServerTestRequest, ServerTestResponse, ServerMonitoring,
-  Job, JobCreate, JobUpdate, JobWithServer,
+  GitHubTokenStatus, Job, JobCreate, JobUpdate, JobWithServer,
   Execution, ExecutionWithJob
 } from '@/types'
 
@@ -115,6 +115,23 @@ export const jobApi = {
   async execute(jobId: number): Promise<Execution> {
     const response = await apiClient.post<Execution>(`/jobs/${jobId}/execute`)
     return response.data
+  }
+}
+
+// ジョブ間で共有する GitHub PAT API
+export const githubTokenApi = {
+  async get(): Promise<GitHubTokenStatus> {
+    const response = await apiClient.get<GitHubTokenStatus>('/github-token')
+    return response.data
+  },
+
+  async update(token: string): Promise<GitHubTokenStatus> {
+    const response = await apiClient.put<GitHubTokenStatus>('/github-token', { token })
+    return response.data
+  },
+
+  async delete(): Promise<void> {
+    await apiClient.delete('/github-token')
   }
 }
 

@@ -18,6 +18,14 @@ class JobTriggerType(str, enum.Enum):
     GITHUB_POLL = "github_poll"
 
 
+class GitHubTokenSource(str, enum.Enum):
+    """GitHub API へ使用する認証情報の取得元。"""
+
+    NONE = "none"
+    SHARED = "shared"
+    JOB = "job"
+
+
 class Job(Base):
     """
     ジョブテーブル
@@ -53,6 +61,13 @@ class Job(Base):
     )
     github_repository = Column(String(255), nullable=True, comment="GitHub owner/repository")
     github_branch = Column(String(255), nullable=True, comment="監視対象ブランチ")
+    github_token_source = Column(
+        SQLEnum(GitHubTokenSource),
+        nullable=False,
+        default=GitHubTokenSource.NONE,
+        server_default="NONE",
+        comment="GitHub PATの取得元",
+    )
     github_token_encrypted = Column(String(2000), nullable=True, comment="暗号化済みGitHub PAT")
     github_last_commit_sha = Column(String(40), nullable=True, comment="最後に確認したcommit SHA")
     github_etag = Column(String(255), nullable=True, comment="GitHub API ETag")

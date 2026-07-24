@@ -11,12 +11,13 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.core.security import credential_encryptor
+from app.models.github_token import GitHubToken
 from app.models.execution import (
     ExecutionStatus,
     ExecutionTriggerSource,
     JobExecution,
 )
-from app.models.job import Job, JobTriggerType
+from app.models.job import GitHubTokenSource, Job, JobTriggerType
 from app.services.execution_runner import execution_runner
 from app.services.github_service import GitHubAPIError, GitHubBranchResult, GitHubService
 
@@ -33,6 +34,8 @@ class TriggerSnapshot:
     branch: str
     token_encrypted: str | None
     etag: str | None
+    job_token_encrypted: str | None = None
+    token_source: GitHubTokenSource = GitHubTokenSource.NONE
 
 
 class GitHubPollingService:
@@ -106,6 +109,16 @@ class GitHubPollingService:
         if not snapshot:
             return
 
+        if (
+            snapshot.token_source == GitHubTokenSource.SHARED
+            and not snapshot.token_encrypted
+        ):
+            await self._record_error(
+                snapshot,
+                "共通GitHubトークンが設定されていません",
+            )
+            return
+
         try:
             token = (
                 credential_encryptor.decrypt(snapshot.token_encrypted)
@@ -142,12 +155,21 @@ class GitHubPollingService:
                 or not job.github_branch
             ):
                 return None
+
+            token_encrypted = job.github_token_encrypted
+            if job.github_token_source == GitHubTokenSource.SHARED:
+                token_encrypted = await self._get_shared_token_encrypted(db)
+            elif job.github_token_source == GitHubTokenSource.NONE:
+                token_encrypted = None
+
             return TriggerSnapshot(
                 job_id=job.id,
                 repository=job.github_repository,
                 branch=job.github_branch,
-                token_encrypted=job.github_token_encrypted,
+                token_encrypted=token_encrypted,
                 etag=job.github_etag,
+                job_token_encrypted=job.github_token_encrypted,
+                token_source=job.github_token_source,
             )
 
     async def _record_error(self, snapshot: TriggerSnapshot, message: str) -> None:
@@ -214,10 +236,22 @@ class GitHubPollingService:
             or job.trigger_type != JobTriggerType.GITHUB_POLL
             or job.github_repository != snapshot.repository
             or job.github_branch != snapshot.branch
-            or job.github_token_encrypted != snapshot.token_encrypted
+            or job.github_token_source != snapshot.token_source
+            or job.github_token_encrypted != snapshot.job_token_encrypted
         ):
             return None
+        if snapshot.token_source == GitHubTokenSource.SHARED:
+            token_encrypted = await self._get_shared_token_encrypted(db)
+            if token_encrypted != snapshot.token_encrypted:
+                return None
         return job
+
+    @staticmethod
+    async def _get_shared_token_encrypted(db: Any) -> str | None:
+        result = await db.execute(
+            select(GitHubToken.token_encrypted).where(GitHubToken.id == 1)
+        )
+        return result.scalar_one_or_none()
 
     def _schedule_execution(self, execution_id: int) -> None:
         self._execution_scheduler(execution_id)

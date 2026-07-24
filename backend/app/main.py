@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 
 from app.core.config import settings
 from app.core.database import init_db
-from app.api.v1 import servers, jobs, executions
+from app.api.v1 import executions, github_token, jobs, servers
 from app.services.execution_runner import execution_runner
 from app.services.github_polling_service import GitHubPollingService
 from app.services.server_monitor import server_monitor
@@ -80,6 +80,12 @@ app.include_router(
     executions.router,
     prefix=f"/api/{settings.api_version}/executions",
     tags=["executions"]
+)
+
+app.include_router(
+    github_token.router,
+    prefix=f"/api/{settings.api_version}/github-token",
+    tags=["github-token"],
 )
 
 

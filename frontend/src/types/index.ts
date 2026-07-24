@@ -74,6 +74,7 @@ export interface ServerUpdate {
 
 // ジョブ関連の型
 export type JobTriggerType = 'manual' | 'github_poll'
+export type GitHubTokenSource = 'none' | 'shared' | 'job'
 
 export interface Job {
   id: number
@@ -84,6 +85,7 @@ export interface Job {
   trigger_type: JobTriggerType
   github_repository: string | null
   github_branch: string | null
+  github_token_source: GitHubTokenSource
   github_token_configured: boolean
   github_last_commit_sha: string | null
   github_last_checked_at: string | null
@@ -104,6 +106,7 @@ export interface JobCreate {
   trigger_type?: JobTriggerType
   github_repository?: string
   github_branch?: string
+  github_token_source?: GitHubTokenSource
   github_token?: string
 }
 
@@ -115,7 +118,13 @@ export interface JobUpdate {
   trigger_type?: JobTriggerType
   github_repository?: string | null
   github_branch?: string | null
+  github_token_source?: GitHubTokenSource
   github_token?: string | null
+}
+
+export interface GitHubTokenStatus {
+  configured: boolean
+  updated_at: string | null
 }
 
 // 実行履歴関連の型
