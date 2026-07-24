@@ -70,6 +70,10 @@
           <ExecutionStatusChip :status="item.status" />
         </template>
 
+        <template #item.trigger_source="{ item }">
+          <ExecutionTriggerChip :source="item.trigger_source" />
+        </template>
+
         <template #item.created_at="{ item }">
           <span class="date-cell">{{ formatDate(item.created_at) }}</span>
         </template>
@@ -102,6 +106,7 @@
 import { computed, onMounted } from 'vue'
 import AppPageHeader from '@/components/AppPageHeader.vue'
 import ExecutionStatusChip from '@/components/ExecutionStatusChip.vue'
+import ExecutionTriggerChip from '@/components/ExecutionTriggerChip.vue'
 import { useServerStore } from '@/stores/server'
 import { useJobStore } from '@/stores/job'
 import { useExecutionStore } from '@/stores/execution'
@@ -128,6 +133,7 @@ const metrics = computed(() => [
 
 const headers = [
   { title: 'ジョブ', key: 'job_name' },
+  { title: '実行方法', key: 'trigger_source', width: 120 },
   { title: 'ステータス', key: 'status', width: 150 },
   { title: '実行日時', key: 'created_at', width: 210 },
   { title: '', key: 'actions', sortable: false, align: 'end' as const, width: 72 },

@@ -31,6 +31,26 @@ class ExecutionSchemaTest(unittest.TestCase):
         self.assertEqual(response.job.server_id, 3)
         self.assertEqual(response.stdout, "deploying\n")
 
+    def test_execution_with_job_exposes_trigger_and_job_name(self) -> None:
+        response = ExecutionWithJobResponse.model_validate(
+            {
+                "id": 12,
+                "job_id": 3,
+                "status": ExecutionStatus.SUCCESS,
+                "trigger_source": ExecutionTriggerSource.GITHUB_POLL,
+                "trigger_commit_sha": "a" * 40,
+                "created_at": datetime.now(timezone.utc),
+                "job": {
+                    "id": 3,
+                    "name": "本番デプロイ",
+                    "server_id": 8,
+                },
+            }
+        )
+
+        self.assertEqual(response.trigger_source, ExecutionTriggerSource.GITHUB_POLL)
+        self.assertEqual(response.job.name, "本番デプロイ")
+
 
 if __name__ == "__main__":
     unittest.main()
