@@ -19,7 +19,8 @@ from app.core.database import engine
 
 INITIAL_REVISION = "0001_initial_schema"
 SERVER_REVISION = "0002_server_monitoring"
-HEAD_REVISION = "0003_add_github_job_triggers"
+GITHUB_REVISION = "0003_add_github_job_triggers"
+HEAD_REVISION = "0004_resumable_remote_executions"
 LEGACY_TRIGGER_BASELINE = "0001_existing_schema_baseline"
 LEGACY_TRIGGER_REVISION = "0002_add_github_job_triggers"
 CORE_TABLES = {"servers", "jobs", "job_executions"}
@@ -43,6 +44,17 @@ GITHUB_JOB_COLUMNS = {
     "github_last_error",
 }
 TRIGGER_EXECUTION_COLUMNS = {"trigger_source", "trigger_commit_sha"}
+RESUMABLE_EXECUTION_COLUMNS = {
+    "server_id_snapshot",
+    "script_snapshot",
+    "remote_execution_id",
+    "remote_process_id",
+    "stdout_offset",
+    "stderr_offset",
+    "last_synced_at",
+    "tracking_error",
+    "cancel_requested_at",
+}
 
 
 @dataclass(frozen=True)
@@ -51,16 +63,17 @@ class SchemaState:
     revision: str | None
     has_server_monitoring: bool
     has_github_triggers: bool
+    has_resumable_executions: bool
 
 
 async def detect_schema_state() -> SchemaState:
     async with engine.connect() as connection:
-        def inspect_schema(sync_connection) -> tuple[bool, bool, bool]:
+        def inspect_schema(sync_connection) -> tuple[bool, bool, bool, bool]:
             inspector = inspect(sync_connection)
             tables = set(inspector.get_table_names())
             present_core_tables = tables & CORE_TABLES
             if not present_core_tables:
-                return True, False, False
+                return True, False, False, False
             if present_core_tables != CORE_TABLES:
                 missing = ", ".join(sorted(CORE_TABLES - present_core_tables))
                 raise RuntimeError(
@@ -81,6 +94,9 @@ async def detect_schema_state() -> SchemaState:
             trigger_execution_present = (
                 execution_columns & TRIGGER_EXECUTION_COLUMNS
             )
+            resumable_execution_present = (
+                execution_columns & RESUMABLE_EXECUTION_COLUMNS
+            )
             if server_present and server_present != SERVER_MONITOR_COLUMNS:
                 raise RuntimeError("サーバ監視columnが一部だけ存在します")
             if (
@@ -91,13 +107,30 @@ async def detect_schema_state() -> SchemaState:
                 and trigger_execution_present != TRIGGER_EXECUTION_COLUMNS
             ) or bool(trigger_job_present) != bool(trigger_execution_present):
                 raise RuntimeError("GitHubトリガーcolumnが一部だけ存在します")
+            if (
+                resumable_execution_present
+                and resumable_execution_present != RESUMABLE_EXECUTION_COLUMNS
+            ):
+                raise RuntimeError("再追跡実行columnが一部だけ存在します")
+            if resumable_execution_present and (
+                trigger_job_present != GITHUB_JOB_COLUMNS
+            ):
+                raise RuntimeError(
+                    "再追跡実行columnにはGitHubトリガーcolumnが必要です"
+                )
             return (
                 False,
                 server_present == SERVER_MONITOR_COLUMNS,
                 trigger_job_present == GITHUB_JOB_COLUMNS,
+                resumable_execution_present == RESUMABLE_EXECUTION_COLUMNS,
             )
 
-        empty, has_server_monitoring, has_github_triggers = (
+        (
+            empty,
+            has_server_monitoring,
+            has_github_triggers,
+            has_resumable_executions,
+        ) = (
             await connection.run_sync(inspect_schema)
         )
         revision = None
@@ -123,6 +156,7 @@ async def detect_schema_state() -> SchemaState:
         revision=revision,
         has_server_monitoring=has_server_monitoring,
         has_github_triggers=has_github_triggers,
+        has_resumable_executions=has_resumable_executions,
     )
 
 
@@ -133,8 +167,11 @@ def stamp(config: Config, revision: str) -> None:
 def upgrade_legacy_schema(config: Config, state: SchemaState) -> None:
     """Alembic 導入前 schema を、存在する column に合わせて baseline 化する。"""
 
-    if state.has_server_monitoring and state.has_github_triggers:
+    if state.has_resumable_executions:
         stamp(config, HEAD_REVISION)
+    elif state.has_server_monitoring and state.has_github_triggers:
+        stamp(config, GITHUB_REVISION)
+        command.upgrade(config, "head")
     elif state.has_server_monitoring:
         stamp(config, SERVER_REVISION)
         command.upgrade(config, "head")
@@ -142,7 +179,8 @@ def upgrade_legacy_schema(config: Config, state: SchemaState) -> None:
         # 旧 trigger branch 適用済み DB には server migration だけを適用する。
         stamp(config, INITIAL_REVISION)
         command.upgrade(config, SERVER_REVISION)
-        stamp(config, HEAD_REVISION)
+        stamp(config, GITHUB_REVISION)
+        command.upgrade(config, "head")
     else:
         stamp(config, INITIAL_REVISION)
         command.upgrade(config, "head")
@@ -155,7 +193,12 @@ def main() -> None:
     if state.empty:
         command.upgrade(config, "head")
         return
-    if state.revision in {INITIAL_REVISION, SERVER_REVISION, HEAD_REVISION}:
+    if state.revision in {
+        INITIAL_REVISION,
+        SERVER_REVISION,
+        GITHUB_REVISION,
+        HEAD_REVISION,
+    }:
         command.upgrade(config, "head")
         return
     if state.revision in {

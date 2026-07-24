@@ -128,13 +128,18 @@ export interface Execution {
   status: ExecutionStatus
   trigger_source: ExecutionTriggerSource
   trigger_commit_sha: string | null
+  remote_execution_id: string | null
+  remote_process_id: number | null
   exit_code: number | null
   stdout: string | null
   stderr: string | null
   error_message: string | null
+  tracking_error: string | null
   created_at: string
   started_at: string | null
   finished_at: string | null
+  last_synced_at: string | null
+  cancel_requested_at: string | null
   duration_seconds: number | null
 }
 

@@ -36,10 +36,17 @@ frontend/src/
 
 - `Server` は接続先と暗号化済み password/private key に加え、直近の接続状態、応答時間、確認エラー、hardware/software inventory を持つ。削除時に Job を cascade 削除する。
 - `Job` は script と `server_id` に加え、任意で GitHub repository・branch・暗号化済み PAT・最後に確認した commit SHA を持つ。
-- `JobExecution` は status、stdout/stderr、exit code、開始・終了時刻、実行元（手動/GitHub）とトリガー元 commit SHA を持つ。
-- 手動実行 API は `pending` の履歴を作成して直ちに返し、アプリ内の `ExecutionRunner` が専用 DB session で SSH 実行する。GitHub trigger も同じ runner へ投入し、プロセス再起動時は残った `pending` を再投入する。
-- SSH の stdout/stderr は並行して読み、受信したチャンクを実行履歴へ逐次保存する。Frontend の実行詳細は `pending` / `running` の間、約2秒ごとに API を再取得して状態と途中ログを表示する。
-- 外部 queue、WebSocket 配信、強制終了を保証する cancel は未実装である。プロセスが強制終了した場合、`running` の履歴を自動回復する仕組みもない。
+- `JobExecution` は status、stdout/stderr、exit code、開始・終了時刻、実行元（手動/GitHub）とトリガー元 commit SHA を持つ。実行後の Job 編集に影響されないよう、実行時の server ID と script も snapshot として保存する。
+- 手動実行 API は `pending` の履歴を作成して直ちに返し、アプリ内の `ExecutionRunner` が専用 DB session で処理する。GitHub trigger も同じ runner へ投入する。
+- runner は DB row を lock し、一意な `remote_execution_id` を DB へ commit してから対象サーバへ接続する。この順序により、リモート起動前後のどこで Backend が停止しても同じ ID から再開できる。
+- 対象サーバの `~/.local/state/tsubame-ci/executions/<remote_execution_id>/` に script、runner、stdout、stderr、PID、PID の `/proc` start time、状態、終了コードを mode 0700/0600 で置く。`nohup setsid` で起動した POSIX shell runner が原子的な `claimed/` directory を取得して一度だけ script を実行する。SSH session と Backend process が終了しても、同じ process group とリモートログは残る。
+- Backend は SFTP で stdout/stderr を byte offset から差分取得し、ログと次 offset を同一 DB transaction へ保存する。複数 tracker や commit 直前の停止でも、offset が一致する差分だけを追記するためログを重複させない。UTF-8 の複数 byte 文字を chunk 境界で分断しない。
+- SSH 接続は1回の同期ごとに張り直し、keepalive と操作 timeout を使う。通信断は実行失敗にせず `tracking_error` を記録して指数 backoff で再接続する。リモート側の spool が正本なので、切断中の stdout/stderr も復旧後に回収できる。
+- Backend 起動時は `pending` と `running` を再投入する。`running` は保存済み remote ID、server snapshot、log offset から再追跡する。旧方式で作られ remote ID がない `running` は復元不能として `failed` へ収束させ、実行中のまま放置しない。
+- cancel は要求日時を先に DB へ保存し、再接続できるまでリモート停止を再試行する。PID と `/proc` start time の両方が一致するときだけ process group へ TERM を送り、PID 再利用による別 process の停止を避ける。
+- Frontend の実行詳細は `pending` / `running` の間、約2秒ごとに API を再取得して状態と同期済みログを表示する。
+
+この方式は target Linux server の filesystem と process が継続していることを前提とする。target OS 自体の再起動、home directory の消失、管理者による spool/PID の削除までは実行継続を保証しない。その場合も runner 消失を検出して履歴を `failed` へ収束させる。リモート spool はログ欠損を避けるため自動削除しない。
 
 ## サーバ監視
 
@@ -71,6 +78,6 @@ API の正確な route/schema は FastAPI の `/docs` と `/openapi.json` を正
 ## 設定と永続化
 
 - 必須環境変数は `DATABASE_URL`、`SECRET_KEY`、`ENCRYPTION_KEY`。全項目は `backend/.env.example` と `backend/app/core/config.py` を参照する。
-- Alembic は `0001 initial → 0002 server monitoring → 0003 GitHub trigger` の単一 chain で管理する。Docker 起動時は `backend/scripts/migrate.py` が空 DB、従来の `create_all()` DB、旧 trigger 開発 revision を判定して適用する。
+- Alembic は `0001 initial → 0002 server monitoring → 0003 GitHub trigger → 0004 resumable remote executions` の単一 chain で管理する。Docker 起動時は `backend/scripts/migrate.py` が空 DB、従来の `create_all()` DB、旧 trigger 開発 revision を判定して適用する。
 - Debug 起動時の `Base.metadata.create_all()` は新規 table の作成だけを行い、既存 table へ column を追加しない。起動前に migration を適用する。
 - Compose の DB volume は `postgres_data`。実データを伴う破壊的操作は行わない。

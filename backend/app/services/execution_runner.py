@@ -22,12 +22,14 @@ class ExecutionRunner:
         self._tasks: dict[int, asyncio.Task[None]] = {}
 
     async def start(self) -> None:
-        """プロセス停止後に残った PENDING 実行を再投入する。"""
+        """再起動後に残った PENDING/RUNNING 実行を再投入する。"""
 
         async with self._session_factory() as db:
             result = await db.execute(
                 select(JobExecution.id).where(
-                    JobExecution.status == ExecutionStatus.PENDING
+                    JobExecution.status.in_(
+                        [ExecutionStatus.PENDING, ExecutionStatus.RUNNING]
+                    )
                 )
             )
             execution_ids = list(result.scalars().all())
@@ -36,7 +38,7 @@ class ExecutionRunner:
             self.schedule(execution_id)
 
     async def stop(self) -> None:
-        """所有している task を停止し、ExecutionService に状態保存させる。"""
+        """ローカル追跡 task だけを停止する。リモートジョブは停止しない。"""
 
         tasks = list(self._tasks.values())
         for task in tasks:

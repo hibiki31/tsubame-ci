@@ -99,6 +99,8 @@ class GitHubPollingServiceTest(unittest.IsolatedAsyncioTestCase):
         execution = self.session.executions[0]
         self.assertEqual(execution.trigger_source, ExecutionTriggerSource.GITHUB_POLL)
         self.assertEqual(execution.trigger_commit_sha, "b" * 40)
+        self.assertEqual(execution.server_id_snapshot, self.job.server_id)
+        self.assertEqual(execution.script_snapshot, self.job.script)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import List
 
+from app.models.execution import ExecutionStatus
 from app.schemas.execution import (
     ExecutionCreateRequest,
     ExecutionResponse,
@@ -94,11 +95,13 @@ async def cancel_execution(
 ):
     """
     実行をキャンセル
-    
-    現在は実装が限定的。将来的に完全なキャンセル機能を実装予定。
+
+    要求を永続化し、SSH が一時切断中の場合も再接続後に停止を試みる。
     """
     try:
         execution = await service.cancel_execution(execution_id)
+        if execution.status == ExecutionStatus.RUNNING:
+            execution_runner.schedule(execution.id)
         return execution
     except ExecutionNotFoundError as e:
         raise HTTPException(

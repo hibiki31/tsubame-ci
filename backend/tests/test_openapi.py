@@ -15,6 +15,17 @@ class OpenAPITest(unittest.TestCase):
             "#/components/schemas/ExecutionWithJobResponse",
         )
 
+    def test_execution_response_exposes_remote_tracking_state(self) -> None:
+        properties = app.openapi()["components"]["schemas"][
+            "ExecutionResponse"
+        ]["properties"]
+
+        self.assertIn("remote_execution_id", properties)
+        self.assertIn("remote_process_id", properties)
+        self.assertIn("last_synced_at", properties)
+        self.assertIn("tracking_error", properties)
+        self.assertIn("cancel_requested_at", properties)
+
 
 if __name__ == "__main__":
     unittest.main()
