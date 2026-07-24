@@ -4,6 +4,24 @@ from app.main import app
 
 
 class OpenAPITest(unittest.TestCase):
+    def test_job_list_exposes_latest_execution_summary(self) -> None:
+        schema = app.openapi()
+        response_items = schema["paths"]["/api/v1/jobs"]["get"]["responses"][
+            "200"
+        ]["content"]["application/json"]["schema"]["items"]
+        properties = schema["components"]["schemas"][
+            "JobLatestExecutionResponse"
+        ]["properties"]
+
+        self.assertEqual(
+            response_items["$ref"],
+            "#/components/schemas/JobListItemResponse",
+        )
+        self.assertEqual(
+            set(properties),
+            {"id", "status", "created_at"},
+        )
+
     def test_execution_detail_uses_nested_job_response(self) -> None:
         schema = app.openapi()
         response_schema = schema["paths"][

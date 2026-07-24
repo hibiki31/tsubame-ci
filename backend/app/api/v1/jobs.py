@@ -4,7 +4,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import List
 
-from app.schemas.job import JobCreate, JobUpdate, JobResponse, JobWithServerResponse
+from app.schemas.job import (
+    JobCreate,
+    JobListItemResponse,
+    JobResponse,
+    JobUpdate,
+    JobWithServerResponse,
+)
 from app.schemas.execution import ExecutionResponse
 from app.services.job_service import (
     JobService,
@@ -19,7 +25,7 @@ from app.api.deps import get_job_service, get_execution_service
 router = APIRouter()
 
 
-@router.get("", response_model=List[JobWithServerResponse])
+@router.get("", response_model=List[JobListItemResponse])
 async def list_jobs(
     server_id: int | None = Query(None, description="サーバIDでフィルタ"),
     service: JobService = Depends(get_job_service)
@@ -27,11 +33,17 @@ async def list_jobs(
     """
     ジョブ一覧を取得
     """
-    if server_id:
-        jobs = await service.get_by_server_id(server_id, include_server=True)
-    else:
-        jobs = await service.get_all(include_server=True)
-    return jobs
+    jobs_with_latest_execution = await service.get_all_with_latest_execution(
+        server_id=server_id,
+        include_server=True,
+    )
+    return [
+        JobListItemResponse(
+            **JobWithServerResponse.model_validate(job).model_dump(),
+            latest_execution=latest_execution,
+        )
+        for job, latest_execution in jobs_with_latest_execution
+    ]
 
 
 @router.get("/{job_id}", response_model=JobWithServerResponse)
