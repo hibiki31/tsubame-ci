@@ -5,7 +5,7 @@
 import axios from 'axios'
 import type { 
   Server, ServerCreate, ServerUpdate, ServerTestRequest, ServerTestResponse, ServerMonitoring,
-  Job, JobCreate, JobUpdate, JobWithServer,
+  Job, JobCreate, JobUpdate, JobListItem, JobWithServer,
   Execution, ExecutionWithJob
 } from '@/types'
 
@@ -83,8 +83,8 @@ export const serverApi = {
 // ジョブAPI
 export const jobApi = {
   // ジョブ一覧取得
-  async getAll(): Promise<JobWithServer[]> {
-    const response = await apiClient.get<JobWithServer[]>('/jobs')
+  async getAll(): Promise<JobListItem[]> {
+    const response = await apiClient.get<JobListItem[]>('/jobs')
     return response.data
   },
 

@@ -6,6 +6,7 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.models.execution import ExecutionStatus
 from app.models.job import JobTriggerType
 from app.schemas.server import ServerResponse
 
@@ -118,3 +119,19 @@ class JobWithServerResponse(JobResponse):
     server: ServerResponse
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class JobLatestExecutionResponse(BaseModel):
+    """ジョブ一覧に表示する最新実行の要約。"""
+
+    id: int
+    status: ExecutionStatus
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class JobListItemResponse(JobWithServerResponse):
+    """最新実行を含むジョブ一覧レスポンス。"""
+
+    latest_execution: Optional[JobLatestExecutionResponse] = None

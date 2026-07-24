@@ -61,6 +61,37 @@
               </div>
             </div>
 
+            <div class="job-card__build">
+              <div class="job-card__build-copy">
+                <v-icon icon="mdi-hammer-wrench" size="17" />
+                <div>
+                  <span>最新ビルド</span>
+                  <router-link
+                    v-if="job.latest_execution"
+                    :aria-label="`${job.name}の最新ビルド詳細を見る`"
+                    :to="`/executions/${job.latest_execution.id}`"
+                  >
+                    {{ formatBuildDate(job.latest_execution.created_at) }}
+                  </router-link>
+                  <strong v-else>実行履歴なし</strong>
+                </div>
+              </div>
+              <ExecutionStatusChip
+                v-if="job.latest_execution"
+                :status="job.latest_execution.status"
+              />
+              <v-chip
+                v-else
+                color="secondary"
+                label
+                prepend-icon="mdi-minus-circle-outline"
+                size="small"
+                variant="tonal"
+              >
+                未実行
+              </v-chip>
+            </div>
+
             <div
               v-if="job.trigger_type === 'github_poll'"
               class="job-card__trigger"
@@ -311,6 +342,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import AppPageHeader from '@/components/AppPageHeader.vue'
+import ExecutionStatusChip from '@/components/ExecutionStatusChip.vue'
 import { useJobStore } from '@/stores/job'
 import { useServerStore } from '@/stores/server'
 import type { Job, JobWithServer, JobCreate, JobUpdate } from '@/types'
@@ -383,6 +415,13 @@ function clearErrors() {
 
 function formatDate(dateString: string): string {
   return new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium' }).format(new Date(dateString))
+}
+
+function formatBuildDate(dateString: string): string {
+  return new Intl.DateTimeFormat('ja-JP', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(dateString))
 }
 
 function formatPollingStatus(job: Job): string {
@@ -615,6 +654,56 @@ onMounted(async () => {
   font-size: 0.76rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.job-card__build {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 58px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: rgba(var(--v-theme-primary), 0.055);
+  border: 1px solid rgba(var(--v-theme-primary), 0.12);
+  border-radius: 10px;
+}
+
+.job-card__build-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+}
+
+.job-card__build-copy .v-icon {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: rgb(var(--v-theme-primary));
+}
+
+.job-card__build-copy span,
+.job-card__build-copy strong,
+.job-card__build-copy a {
+  display: block;
+}
+
+.job-card__build-copy span {
+  color: rgb(var(--v-theme-on-surface-variant));
+  font-size: 0.65rem;
+  font-weight: 650;
+}
+
+.job-card__build-copy strong,
+.job-card__build-copy a {
+  margin-top: 2px;
+  color: rgb(var(--v-theme-on-surface));
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.job-card__build-copy a:hover {
+  color: rgb(var(--v-theme-primary));
 }
 
 .job-card__actions {
