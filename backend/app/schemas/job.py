@@ -7,7 +7,7 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.execution import ExecutionStatus
-from app.models.job import JobTriggerType
+from app.models.job import GitHubTokenSource, JobTriggerType
 from app.schemas.server import ServerResponse
 
 
@@ -35,6 +35,7 @@ class GitHubTriggerInput(BaseModel):
         description="監視する GitHub repository（owner/repository）",
     )
     github_branch: Optional[str] = Field(None, min_length=1, max_length=255)
+    github_token_source: GitHubTokenSource = GitHubTokenSource.NONE
     github_token: Optional[str] = Field(
         None,
         min_length=1,
@@ -73,6 +74,24 @@ class JobCreate(JobFields, GitHubTriggerInput):
         if self.trigger_type == JobTriggerType.GITHUB_POLL:
             if not self.github_repository or not self.github_branch:
                 raise ValueError("GitHubトリガーにはリポジトリとブランチが必要です")
+            if (
+                self.github_token
+                and self.github_token_source == GitHubTokenSource.NONE
+            ):
+                # github_token_source 導入前の client との互換性を維持する。
+                self.github_token_source = GitHubTokenSource.JOB
+            if (
+                self.github_token_source == GitHubTokenSource.JOB
+                and not self.github_token
+            ):
+                raise ValueError("ジョブ固有トークンを入力してください")
+            if (
+                self.github_token_source != GitHubTokenSource.JOB
+                and self.github_token
+            ):
+                raise ValueError(
+                    "GitHubトークンはジョブ固有トークン選択時だけ指定できます"
+                )
         return self
 
 
@@ -86,6 +105,7 @@ class JobUpdate(BaseModel):
     trigger_type: Optional[JobTriggerType] = None
     github_repository: Optional[str] = Field(None, max_length=255)
     github_branch: Optional[str] = Field(None, min_length=1, max_length=255)
+    github_token_source: Optional[GitHubTokenSource] = None
     github_token: Optional[str] = Field(None, min_length=1, max_length=1000)
 
     _validate_repository = field_validator("github_repository")(
@@ -95,6 +115,20 @@ class JobUpdate(BaseModel):
         GitHubTriggerInput.normalize_branch.__func__
     )
 
+    @model_validator(mode="after")
+    def normalize_token_source(self) -> "JobUpdate":
+        if self.github_token and self.github_token_source is None:
+            # github_token_source 導入前の client との互換性を維持する。
+            self.github_token_source = GitHubTokenSource.JOB
+        if (
+            self.github_token
+            and self.github_token_source != GitHubTokenSource.JOB
+        ):
+            raise ValueError(
+                "GitHubトークンはジョブ固有トークン選択時だけ指定できます"
+            )
+        return self
+
 
 class JobResponse(JobFields):
     """認証情報を含まないジョブレスポンス。"""
@@ -103,6 +137,7 @@ class JobResponse(JobFields):
     trigger_type: JobTriggerType
     github_repository: Optional[str] = None
     github_branch: Optional[str] = None
+    github_token_source: GitHubTokenSource
     github_token_configured: bool
     github_last_commit_sha: Optional[str] = None
     github_last_checked_at: Optional[datetime] = None

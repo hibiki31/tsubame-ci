@@ -1,8 +1,9 @@
 import unittest
 from unittest.mock import AsyncMock
 
+from app.core.security import credential_encryptor
 from app.models.execution import ExecutionTriggerSource
-from app.models.job import Job, JobTriggerType
+from app.models.job import GitHubTokenSource, Job, JobTriggerType
 from app.services.github_polling_service import GitHubPollingService, TriggerSnapshot
 from app.services.github_service import GitHubBranchResult
 
@@ -42,6 +43,15 @@ class FakeSession:
         return None
 
 
+class QueueSession(FakeSession):
+    def __init__(self, job: Job, extra_results: list[object]):
+        super().__init__(job)
+        self.results = [job, *extra_results]
+
+    async def execute(self, statement):
+        return FakeResult(self.results.pop(0))
+
+
 class GitHubPollingServiceTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self.job = Job(
@@ -52,6 +62,7 @@ class GitHubPollingServiceTest(unittest.IsolatedAsyncioTestCase):
             trigger_type=JobTriggerType.GITHUB_POLL,
             github_repository="acme/project",
             github_branch="main",
+            github_token_source=GitHubTokenSource.NONE,
             github_token_encrypted=None,
             github_last_commit_sha=None,
         )
@@ -101,6 +112,60 @@ class GitHubPollingServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(execution.trigger_commit_sha, "b" * 40)
         self.assertEqual(execution.server_id_snapshot, self.job.server_id)
         self.assertEqual(execution.script_snapshot, self.job.script)
+
+    async def test_load_snapshot_resolves_shared_token(self) -> None:
+        encrypted = credential_encryptor.encrypt("shared-token")
+        self.job.github_token_source = GitHubTokenSource.SHARED
+        session = QueueSession(self.job, [encrypted])
+        self.poller._session_factory = lambda: session
+
+        snapshot = await self.poller._load_snapshot(self.job.id)
+
+        self.assertIsNotNone(snapshot)
+        self.assertEqual(snapshot.token_source, GitHubTokenSource.SHARED)
+        self.assertEqual(snapshot.token_encrypted, encrypted)
+        self.assertIsNone(snapshot.job_token_encrypted)
+
+    async def test_poll_uses_decrypted_shared_token(self) -> None:
+        encrypted = credential_encryptor.encrypt("shared-token")
+        snapshot = TriggerSnapshot(
+            job_id=self.job.id,
+            repository="acme/project",
+            branch="main",
+            token_encrypted=encrypted,
+            etag=None,
+            token_source=GitHubTokenSource.SHARED,
+        )
+        self.poller._load_snapshot = AsyncMock(return_value=snapshot)
+        self.poller._apply_result = AsyncMock(return_value=None)
+        self.poller._github_service.get_branch_head.return_value = (
+            GitHubBranchResult(sha=None, etag='"same"', not_modified=True)
+        )
+
+        await self.poller._poll_job(self.job.id)
+
+        self.poller._github_service.get_branch_head.assert_awaited_once_with(
+            repository="acme/project",
+            branch="main",
+            token="shared-token",
+            etag=None,
+        )
+
+    async def test_shared_token_rotation_discards_in_flight_result(self) -> None:
+        self.job.github_token_source = GitHubTokenSource.SHARED
+        session = QueueSession(self.job, ["new-encrypted-token"])
+        snapshot = TriggerSnapshot(
+            job_id=self.job.id,
+            repository="acme/project",
+            branch="main",
+            token_encrypted="old-encrypted-token",
+            etag=None,
+            token_source=GitHubTokenSource.SHARED,
+        )
+
+        job = await self.poller._lock_matching_job(session, snapshot)
+
+        self.assertIsNone(job)
 
 
 if __name__ == "__main__":

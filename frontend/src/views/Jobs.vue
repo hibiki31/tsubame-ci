@@ -7,6 +7,20 @@
       description="繰り返し実行するシェルスクリプトを、接続先ごとに整理します。"
     >
       <template #actions>
+        <v-btn
+          prepend-icon="mdi-key-chain-variant"
+          variant="tonal"
+          @click="openSharedTokenDialog"
+        >
+          共通トークン
+          <v-icon
+            v-if="sharedTokenStatus.configured"
+            class="ml-2"
+            color="success"
+            icon="mdi-check-circle"
+            size="16"
+          />
+        </v-btn>
         <v-btn color="primary" prepend-icon="mdi-plus" @click="openCreateDialog">ジョブを追加</v-btn>
       </template>
     </AppPageHeader>
@@ -101,7 +115,13 @@
                 <v-icon icon="mdi-source-branch" size="17" />
                 <strong>{{ job.github_repository }} · {{ job.github_branch }}</strong>
               </div>
-              <span>{{ formatPollingStatus(job) }}</span>
+              <div class="job-card__trigger-meta">
+                <span>{{ formatPollingStatus(job) }}</span>
+                <span>
+                  <v-icon icon="mdi-key-outline" size="13" />
+                  {{ formatTokenSource(job) }}
+                </span>
+              </div>
             </div>
           </v-card-text>
 
@@ -256,20 +276,34 @@
                       :rules="[rules.required, rules.branch]"
                       required
                     />
-                    <v-text-field
-                      v-model="form.github_token"
-                      autocomplete="new-password"
+                    <v-select
+                      v-model="form.github_token_source"
                       class="form-grid__wide"
-                      :hint="tokenHint"
-                      label="GitHub Personal Access Token（任意）"
+                      :items="tokenSourceOptions"
+                      label="GitHub 認証"
                       persistent-hint
                       prepend-inner-icon="mdi-key-outline"
-                      type="password"
+                      :rules="[rules.tokenSource]"
                     />
+
+                    <v-expand-transition>
+                      <v-text-field
+                        v-if="form.github_token_source === 'job'"
+                        v-model="form.github_token"
+                        autocomplete="new-password"
+                        class="form-grid__wide"
+                        :hint="tokenHint"
+                        label="ジョブ固有 Personal Access Token"
+                        persistent-hint
+                        prepend-inner-icon="mdi-key-plus"
+                        :rules="[rules.jobToken]"
+                        type="password"
+                      />
+                    </v-expand-transition>
                   </div>
                   <p class="trigger-note">
                     private repository では、対象 repository の Contents 読み取り権限を持つ fine-grained
-                    token を指定してください。Token は暗号化され、画面や API には返りません。
+                    token を使用してください。共通・固有いずれも暗号化され、画面や API には返りません。
                   </p>
                 </div>
               </v-expand-transition>
@@ -287,6 +321,135 @@
             @click="saveJob"
           >
             保存
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <v-dialog v-model="sharedTokenDialog" max-width="600">
+      <v-card class="dialog-card">
+        <v-card-title>GitHub 共通トークン</v-card-title>
+        <v-card-subtitle>複数のジョブから参照する Personal Access Token を管理します。</v-card-subtitle>
+        <v-divider />
+        <v-card-text>
+          <v-alert
+            v-if="sharedTokenError"
+            class="mb-5"
+            closable
+            color="error"
+            icon="mdi-alert-circle-outline"
+            variant="tonal"
+            @click:close="sharedTokenError = null"
+          >
+            {{ sharedTokenError }}
+          </v-alert>
+
+          <v-skeleton-loader
+            v-if="sharedTokenLoading"
+            type="heading, paragraph"
+          />
+
+          <template v-else>
+            <div class="shared-token-status">
+              <div
+                class="shared-token-status__icon"
+                :class="{ 'shared-token-status__icon--configured': sharedTokenStatus.configured }"
+                aria-hidden="true"
+              >
+                <v-icon
+                  :icon="sharedTokenStatus.configured ? 'mdi-shield-check-outline' : 'mdi-shield-key-outline'"
+                  size="22"
+                />
+              </div>
+              <div>
+                <strong>
+                  {{ sharedTokenStatus.configured ? '共通トークンは設定済みです' : '共通トークンは未設定です' }}
+                </strong>
+                <span v-if="sharedTokenStatus.updated_at">
+                  最終更新 {{ formatDateTime(sharedTokenStatus.updated_at) }}
+                </span>
+                <span v-else>
+                  登録後、ジョブの GitHub 認証で選択できます。
+                </span>
+              </div>
+            </div>
+
+            <v-alert
+              v-if="sharedTokenJobCount > 0"
+              class="mt-4"
+              color="info"
+              icon="mdi-link-variant"
+              variant="tonal"
+            >
+              現在 {{ sharedTokenJobCount }} 件のジョブがこの共通トークンを使用しています。
+              削除するには、先に各ジョブの認証方法を変更してください。
+            </v-alert>
+
+            <v-form
+              ref="sharedTokenFormRef"
+              class="mt-5"
+              @submit.prevent="saveSharedToken"
+            >
+              <v-text-field
+                v-model="sharedTokenValue"
+                autocomplete="new-password"
+                :hint="sharedTokenStatus.configured
+                  ? '新しい値を保存すると、参照中の全ジョブへ即時反映されます。'
+                  : '値は保存後に再表示されません。'"
+                :label="sharedTokenStatus.configured ? '新しい Personal Access Token' : 'Personal Access Token'"
+                persistent-hint
+                prepend-inner-icon="mdi-key-plus"
+                :rules="[rules.required]"
+                type="password"
+              />
+            </v-form>
+          </template>
+        </v-card-text>
+        <v-card-actions>
+          <v-btn
+            v-if="sharedTokenStatus.configured"
+            color="error"
+            :disabled="sharedTokenJobCount > 0"
+            prepend-icon="mdi-delete-outline"
+            variant="text"
+            @click="sharedTokenDeleteDialog = true"
+          >
+            削除
+          </v-btn>
+          <v-spacer />
+          <v-btn variant="text" @click="sharedTokenDialog = false">閉じる</v-btn>
+          <v-btn
+            color="primary"
+            :disabled="sharedTokenLoading"
+            prepend-icon="mdi-content-save-outline"
+            :loading="sharedTokenSaving"
+            @click="saveSharedToken"
+          >
+            {{ sharedTokenStatus.configured ? '更新' : '登録' }}
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <v-dialog v-model="sharedTokenDeleteDialog" max-width="460">
+      <v-card class="dialog-card">
+        <v-card-title>共通トークンを削除しますか？</v-card-title>
+        <v-card-subtitle>削除後は復元できません。</v-card-subtitle>
+        <v-card-text>
+          <v-alert color="error" icon="mdi-alert-outline" variant="tonal">
+            共通トークンを削除します。値を再利用する場合は、安全な保管元を確認してください。
+          </v-alert>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="sharedTokenDeleteDialog = false">キャンセル</v-btn>
+          <v-btn
+            color="error"
+            prepend-icon="mdi-delete-outline"
+            :loading="sharedTokenDeleting"
+            @click="deleteSharedToken"
+          >
+            削除
           </v-btn>
         </v-card-actions>
       </v-card>
@@ -345,7 +508,15 @@ import AppPageHeader from '@/components/AppPageHeader.vue'
 import ExecutionStatusChip from '@/components/ExecutionStatusChip.vue'
 import { useJobStore } from '@/stores/job'
 import { useServerStore } from '@/stores/server'
-import type { Job, JobWithServer, JobCreate, JobUpdate } from '@/types'
+import { githubTokenApi } from '@/services/api'
+import type {
+  GitHubTokenSource,
+  GitHubTokenStatus,
+  Job,
+  JobCreate,
+  JobUpdate,
+  JobWithServer,
+} from '@/types'
 
 interface JobForm {
   name: string
@@ -355,6 +526,7 @@ interface JobForm {
   github_trigger_enabled: boolean
   github_repository: string
   github_branch: string
+  github_token_source: GitHubTokenSource
   github_token: string
 }
 
@@ -370,16 +542,28 @@ const loadError = computed(() => jobStore.error || serverStore.error)
 const dialog = ref(false)
 const deleteDialog = ref(false)
 const executeDialog = ref(false)
+const sharedTokenDialog = ref(false)
+const sharedTokenDeleteDialog = ref(false)
 const editMode = ref(false)
 const saving = ref(false)
 const deleting = ref(false)
 const executing = ref(false)
+const sharedTokenLoading = ref(true)
+const sharedTokenSaving = ref(false)
+const sharedTokenDeleting = ref(false)
 const saveError = ref<string | null>(null)
+const sharedTokenError = ref<string | null>(null)
 const deleteTarget = ref<JobWithServer | null>(null)
 const executeTarget = ref<JobWithServer | null>(null)
 const formRef = ref()
+const sharedTokenFormRef = ref()
 const currentJobId = ref<number | null>(null)
 const currentJobTokenConfigured = ref(false)
+const sharedTokenValue = ref('')
+const sharedTokenStatus = ref<GitHubTokenStatus>({
+  configured: false,
+  updated_at: null,
+})
 
 const form = ref<JobForm>({
   name: '',
@@ -389,10 +573,27 @@ const form = ref<JobForm>({
   github_trigger_enabled: false,
   github_repository: '',
   github_branch: 'main',
+  github_token_source: 'none',
   github_token: '',
 })
 
 const serverOptions = computed(() => servers.value.map((server) => ({ title: server.name, value: server.id })))
+const sharedTokenJobCount = computed(() =>
+  jobs.value.filter((job) =>
+    job.trigger_type === 'github_poll' && job.github_token_source === 'shared'
+  ).length
+)
+const tokenSourceOptions = computed(() => [
+  {
+    title: sharedTokenStatus.value.configured
+      ? '共通トークン'
+      : '共通トークン（未設定）',
+    value: 'shared',
+    props: { disabled: !sharedTokenStatus.value.configured },
+  },
+  { title: 'ジョブ固有トークン', value: 'job' },
+  { title: '認証なし（public repository）', value: 'none' },
+])
 
 const rules = {
   required: (value: unknown) => !!value || '必須項目です',
@@ -400,28 +601,48 @@ const rules = {
     /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/.test(value)
     || 'owner/repository 形式で入力してください',
   branch: (value: string) => !/\s/.test(value) || 'ブランチ名に空白は使用できません',
+  tokenSource: (value: GitHubTokenSource) =>
+    value !== 'shared'
+    || sharedTokenStatus.value.configured
+    || '先に共通トークンを登録してください',
+  jobToken: (value: string) =>
+    form.value.github_token_source !== 'job'
+    || !!value
+    || (editMode.value && currentJobTokenConfigured.value)
+    || 'ジョブ固有トークンを入力してください',
 }
 
 const tokenHint = computed(() =>
   editMode.value && currentJobTokenConfigured.value
     ? '設定済みです。変更する場合だけ新しい token を入力してください。'
-    : 'public repository では空欄でも利用できます。'
+    : 'このジョブだけで使用する token を入力してください。'
 )
 
 function clearErrors() {
   jobStore.clearError()
   serverStore.clearError()
+  sharedTokenError.value = null
 }
 
 function formatDate(dateString: string): string {
   return new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium' }).format(new Date(dateString))
 }
 
-function formatBuildDate(dateString: string): string {
+function formatDateTime(dateString: string): string {
   return new Intl.DateTimeFormat('ja-JP', {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(dateString))
+}
+
+function formatBuildDate(dateString: string): string {
+  return formatDateTime(dateString)
+}
+
+function formatTokenSource(job: Job): string {
+  if (job.github_token_source === 'shared') return '共通トークン'
+  if (job.github_token_source === 'job') return 'ジョブ固有'
+  return '認証なし'
 }
 
 function formatPollingStatus(job: Job): string {
@@ -457,6 +678,7 @@ function openEditDialog(job: JobWithServer) {
     github_trigger_enabled: job.trigger_type === 'github_poll',
     github_repository: job.github_repository || '',
     github_branch: job.github_branch || 'main',
+    github_token_source: job.github_token_source,
     github_token: '',
   }
   dialog.value = true
@@ -471,7 +693,69 @@ function resetForm() {
     github_trigger_enabled: false,
     github_repository: '',
     github_branch: 'main',
+    github_token_source: sharedTokenStatus.value.configured ? 'shared' : 'none',
     github_token: '',
+  }
+}
+
+async function loadSharedTokenStatus() {
+  sharedTokenLoading.value = true
+  sharedTokenError.value = null
+  try {
+    sharedTokenStatus.value = await githubTokenApi.get()
+  } catch (error) {
+    sharedTokenError.value = error instanceof Error
+      ? error.message
+      : '共通トークンの設定状態を取得できませんでした'
+  } finally {
+    sharedTokenLoading.value = false
+  }
+}
+
+function openSharedTokenDialog() {
+  sharedTokenValue.value = ''
+  sharedTokenError.value = null
+  sharedTokenDialog.value = true
+  if (sharedTokenLoading.value || !sharedTokenStatus.value.updated_at) {
+    void loadSharedTokenStatus()
+  }
+}
+
+async function saveSharedToken() {
+  const { valid } = await sharedTokenFormRef.value.validate()
+  if (!valid) return
+
+  sharedTokenSaving.value = true
+  sharedTokenError.value = null
+  try {
+    sharedTokenStatus.value = await githubTokenApi.update(sharedTokenValue.value)
+    sharedTokenValue.value = ''
+    sharedTokenDialog.value = false
+  } catch (error) {
+    sharedTokenError.value = error instanceof Error
+      ? error.message
+      : '共通トークンの保存に失敗しました'
+  } finally {
+    sharedTokenSaving.value = false
+  }
+}
+
+async function deleteSharedToken() {
+  sharedTokenDeleting.value = true
+  sharedTokenError.value = null
+  try {
+    await githubTokenApi.delete()
+    sharedTokenStatus.value = { configured: false, updated_at: null }
+    sharedTokenValue.value = ''
+    sharedTokenDeleteDialog.value = false
+    sharedTokenDialog.value = false
+  } catch (error) {
+    sharedTokenError.value = error instanceof Error
+      ? error.message
+      : '共通トークンの削除に失敗しました'
+    sharedTokenDeleteDialog.value = false
+  } finally {
+    sharedTokenDeleting.value = false
   }
 }
 
@@ -486,7 +770,10 @@ async function saveJob() {
         trigger_type: 'github_poll' as const,
         github_repository: form.value.github_repository,
         github_branch: form.value.github_branch,
-        ...(form.value.github_token ? { github_token: form.value.github_token } : {}),
+        github_token_source: form.value.github_token_source,
+        ...(form.value.github_token_source === 'job' && form.value.github_token
+          ? { github_token: form.value.github_token }
+          : {}),
       }
     : { trigger_type: 'manual' as const }
   try {
@@ -560,10 +847,15 @@ async function confirmExecute() {
 }
 
 onMounted(async () => {
-  try {
-    await Promise.all([serverStore.fetchServers(), jobStore.fetchJobs()])
-  } catch (error) {
-    console.error('データの取得に失敗しました:', error)
+  const results = await Promise.allSettled([
+    serverStore.fetchServers(),
+    jobStore.fetchJobs(),
+    loadSharedTokenStatus(),
+  ])
+  for (const result of results) {
+    if (result.status === 'rejected') {
+      console.error('データの取得に失敗しました:', result.reason)
+    }
   }
 })
 </script>
@@ -738,10 +1030,30 @@ onMounted(async () => {
   white-space: nowrap;
 }
 
-.job-card__trigger > span {
-  display: block;
+.job-card__trigger-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   margin-top: 5px;
+}
+
+.job-card__trigger-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 0.67rem;
+}
+
+.job-card__trigger-meta span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-card__trigger-meta span:last-child {
+  flex: 0 0 auto;
 }
 
 .trigger-heading {
@@ -786,6 +1098,48 @@ onMounted(async () => {
   line-height: 1.65;
 }
 
+.shared-token-status {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  background: rgb(var(--v-theme-surface-light));
+  border: 1px solid rgba(var(--v-border-color), 0.09);
+  border-radius: 14px;
+}
+
+.shared-token-status__icon {
+  display: grid;
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  color: rgb(var(--v-theme-on-surface-variant));
+  background: rgba(var(--v-theme-on-surface-variant), 0.08);
+  border-radius: 12px;
+}
+
+.shared-token-status__icon--configured {
+  color: rgb(var(--v-theme-success));
+  background: rgba(var(--v-theme-success), 0.1);
+}
+
+.shared-token-status strong,
+.shared-token-status span {
+  display: block;
+}
+
+.shared-token-status strong {
+  font-size: 0.9rem;
+}
+
+.shared-token-status span {
+  margin-top: 3px;
+  color: rgb(var(--v-theme-on-surface-variant));
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
 .execute-summary {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
@@ -824,6 +1178,12 @@ onMounted(async () => {
 
   .execute-summary > .v-icon {
     transform: rotate(90deg);
+  }
+
+  .job-card__trigger-meta {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
   }
 }
 </style>

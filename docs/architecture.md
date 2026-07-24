@@ -35,7 +35,8 @@ frontend/src/
 ## データと実行
 
 - `Server` は接続先と暗号化済み password/private key に加え、直近の接続状態、応答時間、確認エラー、hardware/software inventory を持つ。削除時に Job を cascade 削除する。
-- `Job` は script と `server_id` に加え、任意で GitHub repository・branch・暗号化済み PAT・最後に確認した commit SHA を持つ。
+- `Job` は script と `server_id` に加え、任意で GitHub repository・branch・認証元（なし/共通/ジョブ固有）・暗号化済みジョブ固有 PAT・最後に確認した commit SHA を持つ。
+- `GitHubToken` はジョブ間で共有する PAT を1件だけ暗号化保存する。値は write-only とし、API には設定有無と更新日時だけを返す。
 - `JobExecution` は status、stdout/stderr、exit code、開始・終了時刻、実行元（手動/GitHub）とトリガー元 commit SHA を持つ。実行後の Job 編集に影響されないよう、実行時の server ID と script も snapshot として保存する。
 - 手動実行 API は `pending` の履歴を作成して直ちに返し、アプリ内の `ExecutionRunner` が専用 DB session で処理する。GitHub trigger も同じ runner へ投入する。
 - runner は DB row を lock し、一意な `remote_execution_id` を DB へ commit してから対象サーバへ接続する。この順序により、リモート起動前後のどこで Backend が停止しても同じ ID から再開できる。
@@ -68,16 +69,18 @@ ServerMonitor → ServerService → SSHService → Linux server
 - 初回確認は現在の HEAD SHA を基準として保存するだけで実行しない。以後 SHA が変化したときだけ `pending` の履歴を作成し、SSH 実行をアプリ内 task へ投入する。
 - SHA 更新と実行履歴作成は Job row の lock 下で同一 transaction にする。複数 Backend が同時確認しても、同一 SHA の実行履歴は重複作成しない。
 - SHA 保存後から task 開始前にプロセスが停止しても、次回起動時に `pending` の GitHub 実行履歴を再投入する。
-- PAT は Fernet で暗号化し、API には設定有無だけを返す。private repository は対象 repository の Contents 読み取り権限を持つ fine-grained PAT を使用する。
+- PAT は Fernet で暗号化し、API には値を返さない。アプリ全体の共通 PAT またはジョブ固有 PAT を明示的に選択でき、認証なしを選んだ public repository へ PAT を送信しない。
+- 共通 PAT の更新は参照中の全ジョブへ次回確認から反映する。参照ジョブがある間は削除を拒否し、更新中に取得した古い PAT による確認結果は保存しない。
+- private repository は対象 repository の Contents 読み取り権限を持つ fine-grained PAT を使用する。
 - GitHub API の ETag を保持する。確認失敗時はジョブを実行せず、最終確認日時と安全なエラー文を Job に記録する。
 
 両 scheduler は Backend process 内で動く。複数 worker ではサーバ確認と GitHub API request が worker 数だけ発生するため、通常は単一 worker とする。複数 Backend で GitHub polling を行っても DB lock で実行履歴の重複は防ぐが、API request 自体を一台へ限定する場合は一台だけ `GITHUB_POLLING_ENABLED=True` にする。
 
-API の正確な route/schema は FastAPI の `/docs` と `/openapi.json` を正本とする。主要 prefix は `/api/v1/servers`、`/api/v1/jobs`、`/api/v1/executions`。
+API の正確な route/schema は FastAPI の `/docs` と `/openapi.json` を正本とする。主要 prefix は `/api/v1/servers`、`/api/v1/jobs`、`/api/v1/executions`、`/api/v1/github-token`。
 
 ## 設定と永続化
 
 - 必須環境変数は `DATABASE_URL`、`SECRET_KEY`、`ENCRYPTION_KEY`。全項目は `backend/.env.example` と `backend/app/core/config.py` を参照する。
-- Alembic は `0001 initial → 0002 server monitoring → 0003 GitHub trigger → 0004 resumable remote executions` の単一 chain で管理する。Docker 起動時は `backend/scripts/migrate.py` が空 DB、従来の `create_all()` DB、旧 trigger 開発 revision を判定して適用する。
+- Alembic は `0001 initial → 0002 server monitoring → 0003 GitHub trigger → 0004 resumable remote executions → 0005 shared GitHub token` の単一 chain で管理する。Docker 起動時は `backend/scripts/migrate.py` が空 DB、従来の `create_all()` DB、旧 trigger 開発 revision を判定して適用する。
 - Debug 起動時の `Base.metadata.create_all()` は新規 table の作成だけを行い、既存 table へ column を追加しない。起動前に migration を適用する。
 - Compose の DB volume は `postgres_data`。実データを伴う破壊的操作は行わない。

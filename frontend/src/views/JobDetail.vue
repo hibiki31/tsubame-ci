@@ -71,6 +71,9 @@
                   <small v-if="job.trigger_type === 'github_poll'">
                     {{ job.github_repository }} · {{ job.github_branch }}
                   </small>
+                  <small v-if="job.trigger_type === 'github_poll'">
+                    認証: {{ formatTokenSource(job.github_token_source) }}
+                  </small>
                 </div>
               </div>
             </v-card-text>
@@ -231,7 +234,7 @@ import AppPageHeader from '@/components/AppPageHeader.vue'
 import ExecutionStatusChip from '@/components/ExecutionStatusChip.vue'
 import { useJobStore } from '@/stores/job'
 import { useExecutionStore } from '@/stores/execution'
-import type { Execution } from '@/types'
+import type { Execution, GitHubTokenSource } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -281,6 +284,12 @@ function getPollingStatus(): string {
   const checkedAt = formatDate(job.value.github_last_checked_at)
   const sha = job.value.github_last_commit_sha?.slice(0, 7)
   return sha ? `最終確認: ${checkedAt}（${sha}）` : `最終確認: ${checkedAt}`
+}
+
+function formatTokenSource(source: GitHubTokenSource): string {
+  if (source === 'shared') return '共通トークン'
+  if (source === 'job') return 'ジョブ固有トークン'
+  return '認証なし'
 }
 
 async function executeJob() {

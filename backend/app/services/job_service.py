@@ -8,8 +8,9 @@ from sqlalchemy.orm import selectinload
 
 from app.core.security import credential_encryptor
 from app.models.execution import JobExecution
-from app.models.job import Job, JobTriggerType
+from app.models.job import GitHubTokenSource, Job, JobTriggerType
 from app.schemas.job import JobCreate, JobUpdate
+from app.services.github_token_service import GitHubTokenService
 from app.services.server_service import ServerService
 
 
@@ -27,6 +28,7 @@ class JobService:
     def __init__(self, db: AsyncSession):
         self.db = db
         self.server_service = ServerService(db)
+        self.github_token_service = GitHubTokenService(db)
 
     async def get_all(self, include_server: bool = False) -> List[Job]:
         query = select(Job)
@@ -95,13 +97,24 @@ class JobService:
         branch = job_data.github_branch
         self._validate_trigger(trigger_type, repository, branch)
 
+        token_source = job_data.github_token_source
         token_encrypted = None
-        if trigger_type == JobTriggerType.GITHUB_POLL and job_data.github_token:
+        if trigger_type == JobTriggerType.GITHUB_POLL:
+            await self._validate_token_source(
+                token_source,
+                has_job_token=bool(job_data.github_token),
+            )
+        if (
+            trigger_type == JobTriggerType.GITHUB_POLL
+            and token_source == GitHubTokenSource.JOB
+            and job_data.github_token
+        ):
             token_encrypted = credential_encryptor.encrypt(job_data.github_token)
 
         if trigger_type == JobTriggerType.MANUAL:
             repository = None
             branch = None
+            token_source = GitHubTokenSource.NONE
 
         job = Job(
             name=job_data.name,
@@ -111,6 +124,7 @@ class JobService:
             trigger_type=trigger_type,
             github_repository=repository,
             github_branch=branch,
+            github_token_source=token_source,
             github_token_encrypted=token_encrypted,
         )
         self.db.add(job)
@@ -127,10 +141,28 @@ class JobService:
 
         token_was_supplied = "github_token" in update_dict
         token = update_dict.pop("github_token", None)
+        token_source_was_supplied = "github_token_source" in update_dict
+        token_source = update_dict.pop(
+            "github_token_source",
+            job.github_token_source,
+        )
+        if token_was_supplied and not token_source_was_supplied:
+            token_source = (
+                GitHubTokenSource.JOB if token else GitHubTokenSource.NONE
+            )
         trigger_type = update_dict.get("trigger_type", job.trigger_type)
         repository = update_dict.get("github_repository", job.github_repository)
         branch = update_dict.get("github_branch", job.github_branch)
         self._validate_trigger(trigger_type, repository, branch)
+        if trigger_type == JobTriggerType.GITHUB_POLL:
+            await self._validate_token_source(
+                token_source,
+                has_job_token=(
+                    bool(token)
+                    if token_was_supplied
+                    else bool(job.github_token_encrypted)
+                ),
+            )
 
         trigger_target_changed = (
             trigger_type != job.trigger_type
@@ -145,12 +177,15 @@ class JobService:
         if trigger_type == JobTriggerType.MANUAL:
             job.github_repository = None
             job.github_branch = None
+            job.github_token_source = GitHubTokenSource.NONE
             job.github_token_encrypted = None
             trigger_target_changed = True
-        elif token_was_supplied:
-            job.github_token_encrypted = (
-                credential_encryptor.encrypt(token) if token else None
-            )
+        else:
+            job.github_token_source = token_source
+            if token_source != GitHubTokenSource.JOB:
+                job.github_token_encrypted = None
+            elif token_was_supplied and token:
+                job.github_token_encrypted = credential_encryptor.encrypt(token)
 
         if trigger_target_changed:
             # 新しい監視対象では、初回ポーリングを基準 SHA の記録だけにする。
@@ -179,4 +214,22 @@ class JobService:
         ):
             raise JobTriggerConfigurationError(
                 "GitHubトリガーにはリポジトリとブランチが必要です"
+            )
+
+    async def _validate_token_source(
+        self,
+        token_source: GitHubTokenSource,
+        *,
+        has_job_token: bool,
+    ) -> None:
+        if token_source == GitHubTokenSource.JOB and not has_job_token:
+            raise JobTriggerConfigurationError(
+                "ジョブ固有トークンを入力してください"
+            )
+        if (
+            token_source == GitHubTokenSource.SHARED
+            and await self.github_token_service.get(for_update=True) is None
+        ):
+            raise JobTriggerConfigurationError(
+                "共通GitHubトークンが設定されていません"
             )

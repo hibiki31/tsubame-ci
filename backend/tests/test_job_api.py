@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 from app.api.v1.jobs import list_jobs
 from app.models.execution import ExecutionStatus
-from app.models.job import JobTriggerType
+from app.models.job import GitHubTokenSource, JobTriggerType
 from app.models.server import AuthMethod
 
 
@@ -29,6 +29,7 @@ class JobApiTest(unittest.IsolatedAsyncioTestCase):
             script="npm run build",
             server_id=server.id,
             trigger_type=JobTriggerType.MANUAL,
+            github_token_source=GitHubTokenSource.NONE,
             github_token_configured=False,
             created_at=created_at,
             server=server,

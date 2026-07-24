@@ -34,7 +34,7 @@ revision chain は次のとおり。
 
 ```text
 0001_initial_schema → 0002_server_monitoring → 0003_add_github_job_triggers
-                    → 0004_resumable_remote_executions
+                    → 0004_resumable_remote_executions → 0005_shared_github_token
 ```
 
 `scripts/migrate.py` は次を判定して `head` へ移行する。
@@ -54,7 +54,9 @@ GitHub trigger:
 - `GITHUB_POLLING_ENABLED`: アプリ内ポーラーの有効/無効。既定 `True`。
 - `GITHUB_POLL_INTERVAL_SECONDS`: 確認間隔。既定 60 秒、最小 10 秒。
 - `GITHUB_API_TIMEOUT_SECONDS`: GitHub API timeout。既定 10 秒。
-- private repository は Job 編集画面で Contents: Read の fine-grained PAT を登録する。PAT は保存後に再表示されない。
+- Jobs 画面の「共通トークン」から、複数ジョブで使用する PAT を登録・更新する。値は保存後に再表示されず、共通 PAT を参照するジョブがある間は削除できない。
+- GitHub ジョブごとに `認証なし`、`共通トークン`、`ジョブ固有トークン` を選択する。既存の固有 PAT は migration 後もジョブ固有として引き継ぐ。
+- private repository は Contents: Read の fine-grained PAT を使用する。public repository は `認証なし` を選択できる。
 - 監視対象を変更すると基準 SHA と ETag をリセットし、次回確認は自動実行しない。
 
 サーバ監視:
