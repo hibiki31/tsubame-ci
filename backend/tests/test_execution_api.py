@@ -1,7 +1,14 @@
 import unittest
-from unittest.mock import AsyncMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
-from app.api.v1.executions import get_execution, list_executions
+from app.api.v1.executions import (
+    cancel_execution,
+    execution_runner,
+    get_execution,
+    list_executions,
+)
+from app.models.execution import ExecutionStatus
 
 
 class ExecutionApiTest(unittest.IsolatedAsyncioTestCase):
@@ -32,6 +39,17 @@ class ExecutionApiTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIs(result, execution)
         service.get_by_id.assert_awaited_once_with(12, include_job=True)
+
+    async def test_cancel_keeps_running_execution_scheduled_for_retry(self) -> None:
+        execution = SimpleNamespace(id=12, status=ExecutionStatus.RUNNING)
+        service = AsyncMock()
+        service.cancel_execution.return_value = execution
+
+        with patch.object(execution_runner, "schedule") as schedule:
+            result = await cancel_execution(12, service=service)
+
+        self.assertIs(result, execution)
+        schedule.assert_called_once_with(12)
 
 
 if __name__ == "__main__":

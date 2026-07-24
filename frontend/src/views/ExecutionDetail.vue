@@ -54,12 +54,24 @@
         {{ executionStore.error }}
       </v-alert>
 
+      <v-alert
+        v-if="execution.tracking_error"
+        class="mb-6"
+        color="warning"
+        icon="mdi-lan-disconnect"
+        title="SSH 接続を再試行しています"
+        variant="tonal"
+      >
+        リモートジョブは停止せず、接続復旧後に状態とログを再同期します。
+        <span class="tracking-alert__detail">{{ execution.tracking_error }}</span>
+      </v-alert>
+
       <v-card class="panel-card execution-meta">
         <div v-for="item in metadata" :key="item.label" class="execution-meta__item">
           <div class="execution-meta__icon" aria-hidden="true"><v-icon :icon="item.icon" size="18" /></div>
           <div>
             <span>{{ item.label }}</span>
-            <strong>{{ item.value }}</strong>
+            <strong :title="item.value">{{ item.value }}</strong>
           </div>
         </div>
       </v-card>
@@ -209,6 +221,18 @@ const metadata = computed(() => {
       value: execution.value.exit_code === null ? '—' : String(execution.value.exit_code),
       icon: 'mdi-code-tags-check',
     },
+    {
+      label: '最終同期',
+      value: execution.value.last_synced_at ? formatDate(execution.value.last_synced_at) : '同期待ち',
+      icon: 'mdi-cloud-sync-outline',
+    },
+    {
+      label: 'リモート PID',
+      value: execution.value.remote_process_id === null
+        ? '起動待ち'
+        : String(execution.value.remote_process_id),
+      icon: 'mdi-identifier',
+    },
   ]
 })
 
@@ -295,7 +319,7 @@ onUnmounted(() => {
 
 .execution-meta {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   padding: 8px;
 }
 
@@ -308,8 +332,12 @@ onUnmounted(() => {
   border-right: 1px solid rgba(var(--v-border-color), 0.09);
 }
 
-.execution-meta__item:last-child {
+.execution-meta__item:nth-child(3n) {
   border-right: 0;
+}
+
+.execution-meta__item:nth-child(-n + 3) {
+  border-bottom: 1px solid rgba(var(--v-border-color), 0.09);
 }
 
 .execution-meta__icon {
@@ -341,6 +369,13 @@ onUnmounted(() => {
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.tracking-alert__detail {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.78rem;
+  opacity: 0.82;
 }
 
 .log-card__actions {
@@ -401,8 +436,17 @@ onUnmounted(() => {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .execution-meta__item:nth-child(2) {
+  .execution-meta__item {
+    border-right: 1px solid rgba(var(--v-border-color), 0.09);
+    border-bottom: 1px solid rgba(var(--v-border-color), 0.09);
+  }
+
+  .execution-meta__item:nth-child(2n) {
     border-right: 0;
+  }
+
+  .execution-meta__item:nth-last-child(-n + 2) {
+    border-bottom: 0;
   }
 }
 

@@ -27,13 +27,18 @@ class ExecutionResponse(BaseModel):
     status: ExecutionStatus
     trigger_source: ExecutionTriggerSource
     trigger_commit_sha: Optional[str] = None
+    remote_execution_id: Optional[str] = None
+    remote_process_id: Optional[int] = None
     exit_code: Optional[int] = None
     stdout: Optional[str] = None
     stderr: Optional[str] = None
     error_message: Optional[str] = None
+    tracking_error: Optional[str] = None
     created_at: datetime
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
+    last_synced_at: Optional[datetime] = None
+    cancel_requested_at: Optional[datetime] = None
     duration_seconds: Optional[float] = None
     
     model_config = ConfigDict(from_attributes=True)

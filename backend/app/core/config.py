@@ -28,8 +28,29 @@ class Settings(BaseSettings):
     allowed_origins: str = "http://localhost:3000"
     
     # SSH設定
-    ssh_timeout: int = 300
+    # 旧 foreground SSH 実行の互換設定。
+    ssh_timeout: int = Field(default=300, ge=0)
     ssh_connect_timeout: int = 30
+    ssh_keepalive_interval_seconds: int = Field(default=15, ge=0, le=300)
+    ssh_keepalive_count_max: int = Field(default=3, ge=1, le=20)
+    execution_ssh_operation_timeout_seconds: int = Field(
+        default=30,
+        ge=1,
+        le=300,
+    )
+    # 0 は detached ジョブ全体の timeout 無効。
+    execution_timeout_seconds: int = Field(default=0, ge=0)
+    execution_poll_interval_seconds: float = Field(default=2.0, ge=0.5, le=60)
+    execution_reconnect_max_interval_seconds: float = Field(
+        default=30.0,
+        ge=1,
+        le=300,
+    )
+    execution_log_chunk_bytes: int = Field(
+        default=65536,
+        ge=4096,
+        le=1048576,
+    )
 
     # GitHub ポーリング設定
     github_polling_enabled: bool = True

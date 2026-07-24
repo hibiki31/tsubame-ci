@@ -210,6 +210,19 @@ class SSHService:
             return False, f"接続タイムアウト（{self.connect_timeout}秒）"
         except Exception as e:
             return False, f"予期しないエラー: {str(e)}"
+
+    async def connect(self, server: Server) -> asyncssh.SSHClientConnection:
+        """保存済み認証情報を使って対象サーバへ接続する。"""
+
+        password, private_key = self._server_credentials(server)
+        return await self._create_connection(
+            host=server.host,
+            port=server.port,
+            username=server.username,
+            auth_method=server.auth_method,
+            password=password,
+            private_key=private_key,
+        )
     
     async def execute_script(
         self,
@@ -264,14 +277,15 @@ class SSHService:
                         if on_output:
                             await on_output(stream_name, chunk)
 
-                await asyncio.wait_for(
-                    asyncio.gather(
-                        read_stream(process.stdout, "stdout", stdout_chunks),
-                        read_stream(process.stderr, "stderr", stderr_chunks),
-                        process.wait_closed(),
-                    ),
-                    timeout=self.timeout,
+                execution = asyncio.gather(
+                    read_stream(process.stdout, "stdout", stdout_chunks),
+                    read_stream(process.stderr, "stderr", stderr_chunks),
+                    process.wait_closed(),
                 )
+                if self.timeout > 0:
+                    await asyncio.wait_for(execution, timeout=self.timeout)
+                else:
+                    await execution
 
                 exit_code = (
                     process.exit_status if process.exit_status is not None else 0
@@ -330,6 +344,8 @@ class SSHService:
                 "username": username,
                 "known_hosts": None,  # 開発環境用（本番では適切に設定）
                 "connect_timeout": self.connect_timeout,
+                "keepalive_interval": settings.ssh_keepalive_interval_seconds,
+                "keepalive_count_max": settings.ssh_keepalive_count_max,
             }
             
             if auth_method == AuthMethod.PASSWORD:

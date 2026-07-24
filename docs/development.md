@@ -34,6 +34,7 @@ revision chain は次のとおり。
 
 ```text
 0001_initial_schema → 0002_server_monitoring → 0003_add_github_job_triggers
+                    → 0004_resumable_remote_executions
 ```
 
 `scripts/migrate.py` は次を判定して `head` へ移行する。
@@ -62,6 +63,19 @@ GitHub trigger:
 - `SERVER_CHECK_INTERVAL_SECONDS`: 接続確認間隔。
 - `SERVER_CHECK_CONCURRENCY`: 同時確認数。
 - `SERVER_INVENTORY_TIMEOUT`: 構成取得 timeout。
+
+ジョブ実行:
+
+- `EXECUTION_TIMEOUT_SECONDS`: detached ジョブ全体の timeout 秒。既定 `0` は無制限。0より大きい場合、期限後にリモート process group を停止できてから `timeout` へ遷移する。
+- `SSH_TIMEOUT`: 旧 foreground 実行 API の互換設定。detached ジョブの期限には使用しない。
+- `SSH_CONNECT_TIMEOUT`: 1回の SSH 接続 timeout。
+- `SSH_KEEPALIVE_INTERVAL_SECONDS` / `SSH_KEEPALIVE_COUNT_MAX`: 一時通信断・half-open 接続の検出設定。
+- `EXECUTION_SSH_OPERATION_TIMEOUT_SECONDS`: 1回の SFTP/状態確認操作の timeout。
+- `EXECUTION_POLL_INTERVAL_SECONDS`: リモート状態とログの通常確認間隔。
+- `EXECUTION_RECONNECT_MAX_INTERVAL_SECONDS`: SSH エラー時の指数 backoff 上限。
+- `EXECUTION_LOG_CHUNK_BYTES`: 1 stream・1回あたりに同期する最大ログ量。
+
+実行先は Linux、POSIX shell、SFTP subsystem、`mkdir`、`nohup`、`setsid`、`awk`、`date`、`/proc` を必要とする。実行用 SSH user の home に `~/.local/state/tsubame-ci/executions/` を作成できる必要がある。script とログは認証した user だけが読める permission で保存され、自動削除しないため、容量と保存期間は運用側で監視する。
 
 Frontend は Backend を `localhost:8000` で起動して使用する。
 

@@ -192,6 +192,8 @@ class GitHubPollingService:
                     status=ExecutionStatus.PENDING,
                     trigger_source=ExecutionTriggerSource.GITHUB_POLL,
                     trigger_commit_sha=current_sha,
+                    server_id_snapshot=job.server_id,
+                    script_snapshot=job.script,
                 )
                 db.add(execution)
 

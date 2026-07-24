@@ -2,7 +2,16 @@
 ジョブ実行履歴モデル
 ジョブの実行結果とログを管理
 """
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Enum as SQLEnum
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    DateTime,
+    Enum as SQLEnum,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
@@ -60,6 +69,41 @@ class JobExecution(Base):
         comment="実行契機",
     )
     trigger_commit_sha = Column(String(40), nullable=True, comment="実行契機となったcommit SHA")
+
+    # 実行開始後に Job が変更されても、同じ対象と script を再追跡するための snapshot
+    server_id_snapshot = Column(Integer, nullable=False, comment="実行開始時のサーバID")
+    script_snapshot = Column(Text, nullable=False, comment="実行開始時のスクリプト")
+
+    # SSH session から分離したリモート実行の追跡情報
+    remote_execution_id = Column(
+        String(32),
+        nullable=True,
+        unique=True,
+        index=True,
+        comment="対象サーバ上の一意な実行ID",
+    )
+    remote_process_id = Column(Integer, nullable=True, comment="リモートrunnerのPID")
+    stdout_offset = Column(
+        BigInteger,
+        nullable=False,
+        default=0,
+        server_default="0",
+        comment="同期済みstdout byte数",
+    )
+    stderr_offset = Column(
+        BigInteger,
+        nullable=False,
+        default=0,
+        server_default="0",
+        comment="同期済みstderr byte数",
+    )
+    last_synced_at = Column(DateTime(timezone=True), nullable=True, comment="最終追跡成功日時")
+    tracking_error = Column(Text, nullable=True, comment="直近の一時的な追跡エラー")
+    cancel_requested_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="キャンセル要求日時",
+    )
     
     # 実行結果
     exit_code = Column(Integer, nullable=True, comment="終了コード")

@@ -1,11 +1,43 @@
 import asyncio
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 from app.services.execution_runner import ExecutionRunner
 
 
+class FakeScalars:
+    def all(self):
+        return [7, 8]
+
+
+class FakeResult:
+    def scalars(self):
+        return FakeScalars()
+
+
+class FakeSession:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+    async def execute(self, statement):
+        return FakeResult()
+
+
 class ExecutionRunnerTest(unittest.IsolatedAsyncioTestCase):
+    async def test_start_reschedules_persisted_active_executions(self) -> None:
+        runner = ExecutionRunner(session_factory=FakeSession)
+        runner.schedule = Mock()
+
+        await runner.start()
+
+        self.assertEqual(
+            [call.args[0] for call in runner.schedule.call_args_list],
+            [7, 8],
+        )
+
     async def test_schedule_deduplicates_active_execution(self) -> None:
         runner = ExecutionRunner()
         release = asyncio.Event()
