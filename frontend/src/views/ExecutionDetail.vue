@@ -22,6 +22,7 @@
             <span>{{ refreshing ? '更新中' : '2秒ごとに更新' }}</span>
           </div>
           <ExecutionStatusChip :status="execution.status" />
+          <ExecutionTriggerChip :source="execution.trigger_source" />
           <v-btn
             aria-label="実行状態とログを更新"
             icon="mdi-refresh"
@@ -144,6 +145,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AppPageHeader from '@/components/AppPageHeader.vue'
 import ExecutionStatusChip from '@/components/ExecutionStatusChip.vue'
+import ExecutionTriggerChip from '@/components/ExecutionTriggerChip.vue'
 import { useExecutionStore } from '@/stores/execution'
 
 const route = useRoute()
