@@ -2,7 +2,7 @@
 
 import asyncio
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Literal
 
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,13 +59,21 @@ class ExecutionService:
             raise ExecutionNotFoundError(f"実行ID {execution_id} が見つかりません")
         return execution
 
-    async def get_by_job_id(self, job_id: int, limit: int = 50) -> List[JobExecution]:
-        result = await self.db.execute(
+    async def get_by_job_id(
+        self,
+        job_id: int,
+        limit: int = 50,
+        include_job: bool = False,
+    ) -> List[JobExecution]:
+        query = (
             select(JobExecution)
             .where(JobExecution.job_id == job_id)
             .order_by(desc(JobExecution.created_at))
             .limit(limit)
         )
+        if include_job:
+            query = query.options(selectinload(JobExecution.job))
+        result = await self.db.execute(query)
         return list(result.scalars().all())
 
     async def create_pending(
@@ -88,21 +96,6 @@ class ExecutionService:
         await self.db.refresh(execution)
         return execution
 
-    async def create_and_execute(
-        self,
-        job_id: int,
-        trigger_source: ExecutionTriggerSource = ExecutionTriggerSource.MANUAL,
-        trigger_commit_sha: str | None = None,
-    ) -> JobExecution:
-        """実行履歴を作成し、SSH ジョブの完了まで処理する。"""
-
-        execution = await self.create_pending(
-            job_id,
-            trigger_source=trigger_source,
-            trigger_commit_sha=trigger_commit_sha,
-        )
-        return await self.execute_pending(execution.id)
-
     async def execute_pending(self, execution_id: int) -> JobExecution:
         """PENDING の実行を一度だけ RUNNING へ遷移させて処理する。"""
 
@@ -123,9 +116,21 @@ class ExecutionService:
         await self.db.commit()
 
         try:
+            output_lock = asyncio.Lock()
+
+            async def persist_output(
+                stream_name: Literal["stdout", "stderr"],
+                chunk: str,
+            ) -> None:
+                async with output_lock:
+                    current = getattr(execution, stream_name) or ""
+                    setattr(execution, stream_name, current + chunk)
+                    await self.db.commit()
+
             exit_code, stdout, stderr = await ssh_service.execute_script(
                 server=job.server,
                 script=job.script,
+                on_output=persist_output,
             )
             execution.status = (
                 ExecutionStatus.SUCCESS if exit_code == 0 else ExecutionStatus.FAILED

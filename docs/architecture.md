@@ -25,7 +25,7 @@ frontend/src/
 ├── views/        route 単位の画面
 ├── components/   共有 UI
 ├── stores/       Pinia の状態と action
-├── services/     Axios と WebSocket client
+├── services/     Axios client
 ├── types/        API 対応型
 └── router/       画面 route
 ```
@@ -37,7 +37,9 @@ frontend/src/
 - `Server` は接続先と暗号化済み password/private key に加え、直近の接続状態、応答時間、確認エラー、hardware/software inventory を持つ。削除時に Job を cascade 削除する。
 - `Job` は script と `server_id` に加え、任意で GitHub repository・branch・暗号化済み PAT・最後に確認した commit SHA を持つ。
 - `JobExecution` は status、stdout/stderr、exit code、開始・終了時刻、実行元（手動/GitHub）とトリガー元 commit SHA を持つ。
-- 現行の手動実行 API は SSH 完了まで request 内で待機する。外部 queue、実処理の cancel、WebSocket 配信は未実装。
+- 手動実行 API は `pending` の履歴を作成して直ちに返し、アプリ内の `ExecutionRunner` が専用 DB session で SSH 実行する。GitHub trigger も同じ runner へ投入し、プロセス再起動時は残った `pending` を再投入する。
+- SSH の stdout/stderr は並行して読み、受信したチャンクを実行履歴へ逐次保存する。Frontend の実行詳細は `pending` / `running` の間、約2秒ごとに API を再取得して状態と途中ログを表示する。
+- 外部 queue、WebSocket 配信、強制終了を保証する cancel は未実装である。プロセスが強制終了した場合、`running` の履歴を自動回復する仕組みもない。
 
 ## サーバ監視
 

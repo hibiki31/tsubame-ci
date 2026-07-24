@@ -4,7 +4,7 @@ asyncsshを使用してリモートサーバに接続し、スクリプトを実
 """
 import asyncssh
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Awaitable, Callable, Literal, Optional, Tuple
 import asyncio
 import time
 
@@ -21,6 +21,12 @@ class SSHConnectionError(Exception):
 class SSHExecutionError(Exception):
     """SSH実行エラー"""
     pass
+
+
+ExecutionOutputHandler = Callable[
+    [Literal["stdout", "stderr"], str],
+    Awaitable[None],
+]
 
 
 @dataclass(frozen=True)
@@ -208,7 +214,8 @@ class SSHService:
     async def execute_script(
         self,
         server: Server,
-        script: str
+        script: str,
+        on_output: ExecutionOutputHandler | None = None,
     ) -> Tuple[int, str, str]:
         """
         サーバ上でスクリプトを実行
@@ -238,16 +245,39 @@ class SSHService:
                 private_key=private_key
             )
             
-            # スクリプト実行（タイムアウト付き）
+            # stdout/stderr を並行して読み、受信したチャンクを逐次通知する。
             try:
-                result = await asyncio.wait_for(
-                    conn.run(script, check=False),
-                    timeout=self.timeout
+                process = await conn.create_process(script)
+                stdout_chunks: list[str] = []
+                stderr_chunks: list[str] = []
+
+                async def read_stream(
+                    stream,
+                    stream_name: Literal["stdout", "stderr"],
+                    chunks: list[str],
+                ) -> None:
+                    while True:
+                        chunk = await stream.read(4096)
+                        if not chunk:
+                            break
+                        chunks.append(chunk)
+                        if on_output:
+                            await on_output(stream_name, chunk)
+
+                await asyncio.wait_for(
+                    asyncio.gather(
+                        read_stream(process.stdout, "stdout", stdout_chunks),
+                        read_stream(process.stderr, "stderr", stderr_chunks),
+                        process.wait_closed(),
+                    ),
+                    timeout=self.timeout,
                 )
-                
-                exit_code = result.exit_status if result.exit_status is not None else 0
-                stdout = result.stdout if result.stdout else ""
-                stderr = result.stderr if result.stderr else ""
+
+                exit_code = (
+                    process.exit_status if process.exit_status is not None else 0
+                )
+                stdout = "".join(stdout_chunks)
+                stderr = "".join(stderr_chunks)
 
                 return exit_code, stdout, stderr
 

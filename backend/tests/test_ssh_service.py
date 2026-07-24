@@ -10,8 +10,19 @@ from app.services.ssh_service import SSHConnectionError, SSHExecutionError, SSHS
 class SSHServiceTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self.service = SSHService()
+        self.process = SimpleNamespace(
+            stdout=SimpleNamespace(
+                read=AsyncMock(side_effect=["completed\n", ""]),
+            ),
+            stderr=SimpleNamespace(
+                read=AsyncMock(side_effect=["warning\n", ""]),
+            ),
+            exit_status=0,
+            wait_closed=AsyncMock(),
+        )
         self.connection = SimpleNamespace(
             run=AsyncMock(),
+            create_process=AsyncMock(return_value=self.process),
             close=Mock(return_value=None),
             wait_closed=AsyncMock(),
         )
@@ -26,20 +37,29 @@ class SSHServiceTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_execute_script_closes_connection_after_success(self) -> None:
-        self.connection.run.return_value = SimpleNamespace(
-            exit_status=0,
-            stdout="completed\n",
-            stderr="",
-        )
-
         result = await self.service.execute_script(self.server, "echo completed")
 
-        self.assertEqual(result, (0, "completed\n", ""))
+        self.assertEqual(result, (0, "completed\n", "warning\n"))
+        self.connection.create_process.assert_awaited_once_with("echo completed")
+        self.process.wait_closed.assert_awaited_once_with()
         self.connection.close.assert_called_once_with()
         self.connection.wait_closed.assert_awaited_once_with()
 
+    async def test_execute_script_notifies_output_as_it_arrives(self) -> None:
+        on_output = AsyncMock()
+
+        await self.service.execute_script(
+            self.server,
+            "echo completed",
+            on_output=on_output,
+        )
+
+        on_output.assert_any_await("stdout", "completed\n")
+        on_output.assert_any_await("stderr", "warning\n")
+        self.assertEqual(on_output.await_count, 2)
+
     async def test_execute_script_closes_connection_after_timeout(self) -> None:
-        self.connection.run.side_effect = asyncio.TimeoutError
+        self.process.stdout.read.side_effect = asyncio.TimeoutError
 
         with self.assertRaisesRegex(SSHExecutionError, "タイムアウト"):
             await self.service.execute_script(self.server, "sleep 999")

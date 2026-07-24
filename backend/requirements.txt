@@ -21,6 +21,3 @@ python-multipart>=0.0.6
 
 # CORS
 python-dotenv>=1.0.0
-
-# WebSocket
-websockets>=12.0

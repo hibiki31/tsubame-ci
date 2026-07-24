@@ -4,8 +4,8 @@
  */
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { executionApi, createExecutionWebSocket } from '@/services/api'
-import type { ExecutionWithJob, ExecutionLogMessage, ExecutionStatusMessage } from '@/types'
+import { executionApi } from '@/services/api'
+import type { ExecutionWithJob } from '@/types'
 
 export const useExecutionStore = defineStore('execution', () => {
   // State
@@ -13,8 +13,6 @@ export const useExecutionStore = defineStore('execution', () => {
   const currentExecution = ref<ExecutionWithJob | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
-  const realtimeLogs = ref<string[]>([])
-  const wsConnection = ref<WebSocket | null>(null)
 
   // Getters
   const getExecutionById = computed(() => {
@@ -43,17 +41,22 @@ export const useExecutionStore = defineStore('execution', () => {
     }
   }
 
-  async function fetchExecution(id: number) {
-    loading.value = true
-    error.value = null
+  async function fetchExecution(id: number, silent = false) {
+    if (!silent) {
+      loading.value = true
+      error.value = null
+    }
     try {
       currentExecution.value = await executionApi.get(id)
+      error.value = null
       return currentExecution.value
     } catch (err) {
       error.value = err instanceof Error ? err.message : '実行履歴の取得に失敗しました'
       throw err
     } finally {
-      loading.value = false
+      if (!silent) {
+        loading.value = false
+      }
     }
   }
 
@@ -79,69 +82,6 @@ export const useExecutionStore = defineStore('execution', () => {
     }
   }
 
-  // WebSocket接続の確立
-  function connectToExecution(executionId: number) {
-    // 既存の接続があれば閉じる
-    disconnectExecution()
-    
-    realtimeLogs.value = []
-    
-    try {
-      wsConnection.value = createExecutionWebSocket(executionId)
-      
-      wsConnection.value.onopen = () => {
-        console.log('WebSocket接続確立:', executionId)
-      }
-      
-      wsConnection.value.onmessage = (event) => {
-        const message = JSON.parse(event.data) as ExecutionLogMessage | ExecutionStatusMessage
-        
-        if (message.type === 'log') {
-          const logMessage = message as ExecutionLogMessage
-          realtimeLogs.value.push(logMessage.data)
-        } else if (message.type === 'status') {
-          const statusMessage = message as ExecutionStatusMessage
-          // 実行ステータスの更新
-          if (currentExecution.value?.id === statusMessage.execution_id) {
-            currentExecution.value.status = statusMessage.status
-            if (statusMessage.exit_code !== null) {
-              currentExecution.value.exit_code = statusMessage.exit_code
-            }
-          }
-        } else if (message.type === 'error') {
-          const errorMessage = message as ExecutionLogMessage
-          error.value = errorMessage.data
-        }
-      }
-      
-      wsConnection.value.onerror = (event) => {
-        console.error('WebSocketエラー:', event)
-        error.value = 'リアルタイム接続でエラーが発生しました'
-      }
-      
-      wsConnection.value.onclose = () => {
-        console.log('WebSocket接続終了:', executionId)
-        wsConnection.value = null
-      }
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : 'WebSocket接続に失敗しました'
-      throw err
-    }
-  }
-
-  // WebSocket接続の切断
-  function disconnectExecution() {
-    if (wsConnection.value) {
-      wsConnection.value.close()
-      wsConnection.value = null
-    }
-  }
-
-  // リアルタイムログのクリア
-  function clearRealtimeLogs() {
-    realtimeLogs.value = []
-  }
-
   function clearError() {
     error.value = null
   }
@@ -152,8 +92,6 @@ export const useExecutionStore = defineStore('execution', () => {
     currentExecution,
     loading,
     error,
-    realtimeLogs,
-    wsConnection,
     
     // Getters
     getExecutionById,
@@ -164,9 +102,6 @@ export const useExecutionStore = defineStore('execution', () => {
     fetchExecutions,
     fetchExecution,
     fetchJobExecutions,
-    connectToExecution,
-    disconnectExecution,
-    clearRealtimeLogs,
     clearError
   }
 })

@@ -17,7 +17,7 @@ from app.models.execution import (
     JobExecution,
 )
 from app.models.job import Job, JobTriggerType
-from app.services.execution_service import ExecutionService
+from app.services.execution_runner import execution_runner
 from app.services.github_service import GitHubAPIError, GitHubBranchResult, GitHubService
 
 
@@ -43,21 +43,21 @@ class GitHubPollingService:
         session_factory: Callable[..., Any] = AsyncSessionLocal,
         github_service: GitHubService | None = None,
         interval_seconds: int | None = None,
+        execution_scheduler: Callable[[int], None] = execution_runner.schedule,
     ):
         self._session_factory = session_factory
         self._github_service = github_service or GitHubService()
         self._interval_seconds = (
             interval_seconds or settings.github_poll_interval_seconds
         )
+        self._execution_scheduler = execution_scheduler
         self._runner: asyncio.Task[None] | None = None
-        self._execution_tasks: set[asyncio.Task[None]] = set()
         self._stop_event = asyncio.Event()
 
     async def start(self) -> None:
         if self._runner and not self._runner.done():
             return
         self._stop_event.clear()
-        await self._resume_pending_executions()
         self._runner = asyncio.create_task(
             self._run(),
             name="github-branch-poller",
@@ -70,11 +70,6 @@ class GitHubPollingService:
             await asyncio.gather(self._runner, return_exceptions=True)
             self._runner = None
 
-        tasks = list(self._execution_tasks)
-        for task in tasks:
-            task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
         await self._github_service.close()
 
     async def _run(self) -> None:
@@ -105,20 +100,6 @@ class GitHubPollingService:
 
         for job_id in job_ids:
             await self._poll_job(job_id)
-
-    async def _resume_pending_executions(self) -> None:
-        """SHA 保存後のプロセス停止で残った実行待ちを再投入する。"""
-
-        async with self._session_factory() as db:
-            result = await db.execute(
-                select(JobExecution.id).where(
-                    JobExecution.status == ExecutionStatus.PENDING,
-                    JobExecution.trigger_source == ExecutionTriggerSource.GITHUB_POLL,
-                )
-            )
-            execution_ids = list(result.scalars().all())
-        for execution_id in execution_ids:
-            self._schedule_execution(execution_id)
 
     async def _poll_job(self, job_id: int) -> None:
         snapshot = await self._load_snapshot(job_id)
@@ -237,25 +218,4 @@ class GitHubPollingService:
         return job
 
     def _schedule_execution(self, execution_id: int) -> None:
-        task = asyncio.create_task(
-            self._execute(execution_id),
-            name=f"github-trigger-execution-{execution_id}",
-        )
-        self._execution_tasks.add(task)
-        task.add_done_callback(self._execution_tasks.discard)
-        task.add_done_callback(self._log_execution_failure)
-
-    async def _execute(self, execution_id: int) -> None:
-        async with self._session_factory() as db:
-            await ExecutionService(db).execute_pending(execution_id)
-
-    @staticmethod
-    def _log_execution_failure(task: asyncio.Task[None]) -> None:
-        if task.cancelled():
-            return
-        error = task.exception()
-        if error:
-            logger.error(
-                "GitHub-triggered execution task failed",
-                exc_info=(type(error), error, error.__traceback__),
-            )
+        self._execution_scheduler(execution_id)
