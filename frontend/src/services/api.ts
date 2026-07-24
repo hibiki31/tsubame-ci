@@ -146,11 +146,4 @@ export const executionApi = {
   }
 }
 
-// WebSocket接続用
-export const createExecutionWebSocket = (executionId: number): WebSocket => {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const wsUrl = `${protocol}//${window.location.host}/api/v1/executions/${executionId}/logs`
-  return new WebSocket(wsUrl)
-}
-
 export default apiClient

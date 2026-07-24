@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.core.database import init_db
 from app.api.v1 import servers, jobs, executions
+from app.services.execution_runner import execution_runner
 from app.services.github_polling_service import GitHubPollingService
 from app.services.server_monitor import server_monitor
 from app import __version__
@@ -28,6 +29,8 @@ async def lifespan(app: FastAPI):
 
     github_poller = None
     try:
+        await execution_runner.start()
+        app.state.execution_runner = execution_runner
         if settings.server_monitor_enabled:
             server_monitor.start()
         if settings.github_polling_enabled:
@@ -38,6 +41,7 @@ async def lifespan(app: FastAPI):
     finally:
         if github_poller:
             await github_poller.stop()
+        await execution_runner.stop()
         await server_monitor.stop()
 
 

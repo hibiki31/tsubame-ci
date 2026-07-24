@@ -13,6 +13,7 @@ from app.services.job_service import (
 )
 from app.services.server_service import ServerNotFoundError
 from app.services.execution_service import ExecutionService
+from app.services.execution_runner import execution_runner
 from app.api.deps import get_job_service, get_execution_service
 
 router = APIRouter()
@@ -147,11 +148,11 @@ async def execute_job(
     """
     ジョブを実行
     
-    指定されたジョブを実行し、実行履歴を返す。
-    実際の実行は同期的に行われる。
+    実行待ち履歴を作成して直ちに返し、SSH 実行はアプリ内 task で行う。
     """
     try:
-        execution = await execution_service.create_and_execute(job_id)
+        execution = await execution_service.create_pending(job_id)
+        execution_runner.schedule(execution.id)
         return execution
     except JobNotFoundError as e:
         raise HTTPException(

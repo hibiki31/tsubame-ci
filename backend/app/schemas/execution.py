@@ -9,6 +9,16 @@ from datetime import datetime
 from app.models.execution import ExecutionStatus, ExecutionTriggerSource
 
 
+class ExecutionJobSummary(BaseModel):
+    """実行履歴の表示に必要なジョブの要約。"""
+
+    id: int
+    name: str
+    server_id: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # レスポンススキーマ
 class ExecutionResponse(BaseModel):
     """ジョブ実行履歴のレスポンス"""
@@ -32,7 +42,7 @@ class ExecutionResponse(BaseModel):
 # ジョブ情報を含むレスポンス
 class ExecutionWithJobResponse(ExecutionResponse):
     """ジョブ情報を含む実行履歴レスポンス"""
-    job: dict = Field(..., description="ジョブ情報")
+    job: ExecutionJobSummary = Field(..., description="ジョブ情報")
     
     model_config = ConfigDict(from_attributes=True)
 
@@ -41,20 +51,3 @@ class ExecutionWithJobResponse(ExecutionResponse):
 class ExecutionCreateRequest(BaseModel):
     """ジョブ実行リクエスト"""
     job_id: int = Field(..., gt=0, description="実行するジョブID")
-
-
-# WebSocketメッセージ
-class ExecutionLogMessage(BaseModel):
-    """WebSocketで送信するログメッセージ"""
-    type: str = Field(..., description="メッセージタイプ: log, status, error")
-    data: str = Field(..., description="メッセージデータ")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="タイムスタンプ")
-
-
-class ExecutionStatusMessage(BaseModel):
-    """WebSocketで送信するステータス更新メッセージ"""
-    type: str = Field(default="status", description="メッセージタイプ")
-    execution_id: int
-    status: ExecutionStatus
-    exit_code: Optional[int] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="タイムスタンプ")

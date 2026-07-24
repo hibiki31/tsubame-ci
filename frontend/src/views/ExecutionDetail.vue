@@ -10,7 +10,26 @@
         :description="`実行ID ${execution.id} の結果とログを表示しています。`"
       >
         <template #actions>
+          <div v-if="isActive" class="refresh-state" aria-live="polite">
+            <v-progress-circular
+              v-if="refreshing"
+              color="info"
+              indeterminate
+              size="16"
+              width="2"
+            />
+            <v-icon v-else color="info" icon="mdi-sync" size="16" />
+            <span>{{ refreshing ? '更新中' : '2秒ごとに更新' }}</span>
+          </div>
           <ExecutionStatusChip :status="execution.status" />
+          <v-btn
+            aria-label="実行状態とログを更新"
+            icon="mdi-refresh"
+            :loading="refreshing"
+            size="small"
+            variant="text"
+            @click="refreshExecution(false)"
+          />
           <v-btn
             v-if="execution.job_id"
             prepend-icon="mdi-script-text-outline"
@@ -52,14 +71,14 @@
           </div>
           <div class="log-card__actions">
             <v-chip
-              v-if="execution.status === 'running'"
+              v-if="isActive"
               class="live-chip"
               color="info"
               prepend-icon="mdi-access-point"
               size="small"
               variant="tonal"
             >
-              Live
+              {{ execution.status === 'pending' ? '開始待ち' : '追従中' }}
             </v-chip>
             <v-btn
               :aria-label="copiedLog === 'stdout' ? '標準出力をコピーしました' : '標準出力をコピー'"
@@ -132,20 +151,38 @@ const executionStore = useExecutionStore()
 
 const executionId = computed(() => parseInt(route.params.id as string))
 const execution = computed(() => executionStore.currentExecution)
-const realtimeLogs = computed(() => executionStore.realtimeLogs)
 const loading = computed(() => executionStore.loading)
 const copiedLog = ref<'stdout' | 'stderr' | null>(null)
+const refreshing = ref(false)
+const now = ref(Date.now())
 let intervalId: ReturnType<typeof setInterval> | null = null
 let copyResetId: ReturnType<typeof setTimeout> | null = null
 
+const isActive = computed(() =>
+  execution.value?.status === 'running' || execution.value?.status === 'pending'
+)
+
 const displayStdout = computed(() => {
-  if (execution.value?.status === 'running' && realtimeLogs.value.length > 0) {
-    return realtimeLogs.value.join('\n')
-  }
-  return execution.value?.stdout || '標準出力はありません。'
+  if (execution.value?.stdout) return execution.value.stdout
+  if (execution.value?.status === 'pending') return '実行開始を待っています…'
+  if (execution.value?.status === 'running') return '標準出力を待っています…'
+  return '標準出力はありません。'
 })
 
 const displayStderr = computed(() => execution.value?.stderr || execution.value?.error_message || '')
+
+const displayDuration = computed(() => {
+  if (
+    execution.value?.duration_seconds !== null &&
+    execution.value?.duration_seconds !== undefined
+  ) {
+    return execution.value.duration_seconds
+  }
+  if (execution.value?.started_at && isActive.value) {
+    return Math.max(0, (now.value - new Date(execution.value.started_at).getTime()) / 1000)
+  }
+  return null
+})
 
 const metadata = computed(() => {
   if (!execution.value) return []
@@ -162,7 +199,7 @@ const metadata = computed(() => {
     },
     {
       label: '所要時間',
-      value: formatDuration(execution.value.duration_seconds),
+      value: formatDuration(displayDuration.value),
       icon: 'mdi-timer-outline',
     },
     {
@@ -201,21 +238,40 @@ async function copyLog(value: string, target: 'stdout' | 'stderr') {
   }
 }
 
+async function refreshExecution(silent = true) {
+  if (refreshing.value) return
+  refreshing.value = true
+  now.value = Date.now()
+  try {
+    await executionStore.fetchExecution(executionId.value, silent)
+  } catch (error) {
+    console.error('実行履歴の更新に失敗しました:', error)
+  } finally {
+    refreshing.value = false
+  }
+}
+
+function handleVisibilityChange() {
+  if (!document.hidden && isActive.value) {
+    void refreshExecution()
+  }
+}
+
 onMounted(async () => {
   try {
     await executionStore.fetchExecution(executionId.value)
 
-    if (execution.value?.status === 'running' || execution.value?.status === 'pending') {
-      executionStore.connectToExecution(executionId.value)
-
-      intervalId = setInterval(async () => {
-        if (execution.value?.status === 'running' || execution.value?.status === 'pending') {
-          await executionStore.fetchExecution(executionId.value)
+    if (isActive.value) {
+      intervalId = setInterval(() => {
+        now.value = Date.now()
+        if (isActive.value) {
+          if (!document.hidden) void refreshExecution()
         } else if (intervalId) {
           clearInterval(intervalId)
           intervalId = null
         }
-      }, 5000)
+      }, 2000)
+      document.addEventListener('visibilitychange', handleVisibilityChange)
     }
   } catch (error) {
     console.error('実行履歴の取得に失敗しました:', error)
@@ -225,8 +281,7 @@ onMounted(async () => {
 onUnmounted(() => {
   if (intervalId) clearInterval(intervalId)
   if (copyResetId) clearTimeout(copyResetId)
-  executionStore.disconnectExecution()
-  executionStore.clearRealtimeLogs()
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 </script>
 
@@ -290,6 +345,21 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.refresh-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 0 11px;
+  color: rgb(var(--v-theme-info));
+  background: rgba(var(--v-theme-info), 0.08);
+  border: 1px solid rgba(var(--v-theme-info), 0.16);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 750;
+  white-space: nowrap;
 }
 
 .log-card__body {

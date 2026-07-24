@@ -138,23 +138,14 @@ export interface Execution {
   duration_seconds: number | null
 }
 
+export interface ExecutionJobSummary {
+  id: number
+  name: string
+  server_id: number
+}
+
 export interface ExecutionWithJob extends Execution {
-  job: Job
-}
-
-// WebSocketメッセージ型
-export interface ExecutionLogMessage {
-  type: 'log' | 'status' | 'error'
-  data: string
-  timestamp: string
-}
-
-export interface ExecutionStatusMessage {
-  type: 'status'
-  execution_id: number
-  status: ExecutionStatus
-  exit_code: number | null
-  timestamp: string
+  job: ExecutionJobSummary
 }
 
 // API レスポンス型
