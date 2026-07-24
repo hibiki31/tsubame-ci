@@ -98,6 +98,16 @@ export interface JobWithServer extends Job {
   server: Server
 }
 
+export interface JobLatestExecution {
+  id: number
+  status: ExecutionStatus
+  created_at: string
+}
+
+export interface JobListItem extends JobWithServer {
+  latest_execution: JobLatestExecution | null
+}
+
 export interface JobCreate {
   name: string
   description?: string

@@ -5,11 +5,11 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { jobApi } from '@/services/api'
-import type { JobWithServer, JobCreate, JobUpdate } from '@/types'
+import type { JobListItem, JobWithServer, JobCreate, JobUpdate } from '@/types'
 
 export const useJobStore = defineStore('job', () => {
   // State
-  const jobs = ref<JobWithServer[]>([])
+  const jobs = ref<JobListItem[]>([])
   const currentJob = ref<JobWithServer | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)

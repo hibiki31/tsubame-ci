@@ -2,11 +2,12 @@
 
 from typing import List
 
-from sqlalchemy import select
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.security import credential_encryptor
+from app.models.execution import JobExecution
 from app.models.job import GitHubTokenSource, Job, JobTriggerType
 from app.schemas.job import JobCreate, JobUpdate
 from app.services.github_token_service import GitHubTokenService
@@ -56,6 +57,37 @@ class JobService:
             query = query.options(selectinload(Job.server))
         result = await self.db.execute(query)
         return list(result.scalars().all())
+
+    async def get_all_with_latest_execution(
+        self,
+        server_id: int | None = None,
+        include_server: bool = False,
+    ) -> List[tuple[Job, JobExecution | None]]:
+        """ジョブごとに作成日時が最新の実行 1 件だけを取得する。"""
+
+        latest_execution_id = (
+            select(JobExecution.id)
+            .where(JobExecution.job_id == Job.id)
+            .order_by(
+                desc(JobExecution.created_at),
+                desc(JobExecution.id),
+            )
+            .limit(1)
+            .correlate(Job)
+            .scalar_subquery()
+        )
+        query = (
+            select(Job, JobExecution)
+            .outerjoin(JobExecution, JobExecution.id == latest_execution_id)
+            .order_by(Job.id)
+        )
+        if server_id is not None:
+            query = query.where(Job.server_id == server_id)
+        if include_server:
+            query = query.options(selectinload(Job.server))
+
+        result = await self.db.execute(query)
+        return list(result.all())
 
     async def create(self, job_data: JobCreate) -> Job:
         await self.server_service.get_by_id(job_data.server_id)
