@@ -86,13 +86,22 @@
             <v-chip
               v-if="isActive"
               class="live-chip"
-              color="info"
-              prepend-icon="mdi-access-point"
+              :color="stdoutFollowing ? 'info' : 'warning'"
+              :prepend-icon="stdoutFollowing ? 'mdi-access-point' : 'mdi-pause-circle-outline'"
               size="small"
               variant="tonal"
             >
-              {{ execution.status === 'pending' ? '開始待ち' : '追従中' }}
+              {{ logFollowLabel(stdoutFollowing) }}
             </v-chip>
+            <v-btn
+              v-if="isActive && !stdoutFollowing"
+              prepend-icon="mdi-arrow-down"
+              size="small"
+              variant="text"
+              @click="resumeLogFollow('stdout')"
+            >
+              末尾へ
+            </v-btn>
             <v-btn
               :aria-label="copiedLog === 'stdout' ? '標準出力をコピーしました' : '標準出力をコピー'"
               :color="copiedLog === 'stdout' ? 'success' : undefined"
@@ -106,7 +115,13 @@
           </div>
         </v-card-title>
         <v-card-text class="log-card__body">
-          <pre class="code-panel log-output"><code>{{ displayStdout }}</code></pre>
+          <pre
+            ref="stdoutElement"
+            aria-label="標準出力ログ"
+            class="code-panel log-output"
+            tabindex="0"
+            @scroll.passive="handleLogScroll('stdout')"
+          ><code>{{ displayStdout }}</code></pre>
         </v-card-text>
       </v-card>
 
@@ -116,19 +131,46 @@
             <div class="panel-card__title text-error">標準エラー出力</div>
             <div class="panel-card__subtitle">stderr / error message</div>
           </div>
-          <v-btn
-            :aria-label="copiedLog === 'stderr' ? '標準エラー出力をコピーしました' : '標準エラー出力をコピー'"
-            :color="copiedLog === 'stderr' ? 'success' : undefined"
-            :prepend-icon="copiedLog === 'stderr' ? 'mdi-check' : 'mdi-content-copy'"
-            size="small"
-            variant="text"
-            @click="copyLog(displayStderr, 'stderr')"
-          >
-            {{ copiedLog === 'stderr' ? 'コピー済み' : 'コピー' }}
-          </v-btn>
+          <div class="log-card__actions">
+            <v-chip
+              v-if="isActive"
+              class="live-chip"
+              :color="stderrFollowing ? 'info' : 'warning'"
+              :prepend-icon="stderrFollowing ? 'mdi-access-point' : 'mdi-pause-circle-outline'"
+              size="small"
+              variant="tonal"
+            >
+              {{ logFollowLabel(stderrFollowing) }}
+            </v-chip>
+            <v-btn
+              v-if="isActive && !stderrFollowing"
+              prepend-icon="mdi-arrow-down"
+              size="small"
+              variant="text"
+              @click="resumeLogFollow('stderr')"
+            >
+              末尾へ
+            </v-btn>
+            <v-btn
+              :aria-label="copiedLog === 'stderr' ? '標準エラー出力をコピーしました' : '標準エラー出力をコピー'"
+              :color="copiedLog === 'stderr' ? 'success' : undefined"
+              :prepend-icon="copiedLog === 'stderr' ? 'mdi-check' : 'mdi-content-copy'"
+              size="small"
+              variant="text"
+              @click="copyLog(displayStderr, 'stderr')"
+            >
+              {{ copiedLog === 'stderr' ? 'コピー済み' : 'コピー' }}
+            </v-btn>
+          </div>
         </v-card-title>
         <v-card-text class="log-card__body">
-          <pre class="code-panel log-output log-output--error"><code>{{ displayStderr }}</code></pre>
+          <pre
+            ref="stderrElement"
+            aria-label="標準エラー出力ログ"
+            class="code-panel log-output log-output--error"
+            tabindex="0"
+            @scroll.passive="handleLogScroll('stderr')"
+          ><code>{{ displayStderr }}</code></pre>
         </v-card-text>
       </v-card>
     </template>
@@ -153,7 +195,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AppPageHeader from '@/components/AppPageHeader.vue'
 import ExecutionStatusChip from '@/components/ExecutionStatusChip.vue'
@@ -169,8 +211,13 @@ const loading = computed(() => executionStore.loading)
 const copiedLog = ref<'stdout' | 'stderr' | null>(null)
 const refreshing = ref(false)
 const now = ref(Date.now())
+const stdoutElement = ref<HTMLElement | null>(null)
+const stderrElement = ref<HTMLElement | null>(null)
+const stdoutFollowing = ref(false)
+const stderrFollowing = ref(false)
 let intervalId: ReturnType<typeof setInterval> | null = null
 let copyResetId: ReturnType<typeof setTimeout> | null = null
+const SCROLL_END_TOLERANCE_PX = 4
 
 const isActive = computed(() =>
   execution.value?.status === 'running' || execution.value?.status === 'pending'
@@ -184,6 +231,24 @@ const displayStdout = computed(() => {
 })
 
 const displayStderr = computed(() => execution.value?.stderr || execution.value?.error_message || '')
+
+watch(
+  () => execution.value?.stdout,
+  async (stdout, previousStdout) => {
+    if (stdout === previousStdout || !stdoutFollowing.value) return
+    await scrollLogToEnd('stdout')
+  },
+  { flush: 'post' },
+)
+
+watch(
+  () => execution.value?.stderr || execution.value?.error_message,
+  async (stderr, previousStderr) => {
+    if (stderr === previousStderr || !stderrFollowing.value) return
+    await scrollLogToEnd('stderr')
+  },
+  { flush: 'post' },
+)
 
 const displayDuration = computed(() => {
   if (
@@ -251,6 +316,41 @@ function formatDuration(seconds: number | null): string {
   return `${minutes}分 ${secs}秒`
 }
 
+function logFollowLabel(following: boolean): string {
+  if (execution.value?.status === 'pending') return '開始待ち'
+  return following ? '末尾を追従中' : '過去ログを表示中'
+}
+
+function getLogElement(target: 'stdout' | 'stderr'): HTMLElement | null {
+  return target === 'stdout' ? stdoutElement.value : stderrElement.value
+}
+
+function getFollowingState(target: 'stdout' | 'stderr') {
+  return target === 'stdout' ? stdoutFollowing : stderrFollowing
+}
+
+function isScrolledToEnd(element: HTMLElement): boolean {
+  return element.scrollHeight - element.scrollTop - element.clientHeight <= SCROLL_END_TOLERANCE_PX
+}
+
+function handleLogScroll(target: 'stdout' | 'stderr') {
+  const element = getLogElement(target)
+  if (!element) return
+  getFollowingState(target).value = isScrolledToEnd(element)
+}
+
+async function scrollLogToEnd(target: 'stdout' | 'stderr') {
+  await nextTick()
+  const element = getLogElement(target)
+  if (!element) return
+  element.scrollTop = element.scrollHeight
+}
+
+async function resumeLogFollow(target: 'stdout' | 'stderr') {
+  getFollowingState(target).value = true
+  await scrollLogToEnd(target)
+}
+
 async function copyLog(value: string, target: 'stdout' | 'stderr') {
   try {
     await navigator.clipboard.writeText(value)
@@ -288,6 +388,13 @@ onMounted(async () => {
     await executionStore.fetchExecution(executionId.value)
 
     if (isActive.value) {
+      stdoutFollowing.value = true
+      stderrFollowing.value = true
+      await Promise.all([
+        scrollLogToEnd('stdout'),
+        scrollLogToEnd('stderr'),
+      ])
+
       intervalId = setInterval(() => {
         now.value = Date.now()
         if (isActive.value) {
@@ -380,7 +487,9 @@ onUnmounted(() => {
 
 .log-card__actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
 }
 
@@ -465,7 +574,7 @@ onUnmounted(() => {
   }
 
   .log-card__actions {
-    justify-content: space-between;
+    justify-content: flex-start;
     width: 100%;
   }
 
