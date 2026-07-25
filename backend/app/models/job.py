@@ -80,7 +80,11 @@ class Job(Base):
     
     # リレーション
     server = relationship("Server", back_populates="jobs")
-    executions = relationship("JobExecution", back_populates="job", cascade="all, delete-orphan")
+    executions = relationship(
+        "JobExecution",
+        back_populates="job",
+        passive_deletes=True,
+    )
 
     @property
     def github_token_configured(self) -> bool:

@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import AsyncMock
 
 from app.core.security import credential_encryptor
-from app.models.execution import ExecutionTriggerSource
+from app.models.execution import ExecutionKind, ExecutionTriggerSource
 from app.models.job import GitHubTokenSource, Job, JobTriggerType
 from app.services.github_polling_service import GitHubPollingService, TriggerSnapshot
 from app.services.github_service import GitHubBranchResult
@@ -13,6 +13,9 @@ class FakeResult:
         self.value = value
 
     def scalar_one_or_none(self):
+        return self.value
+
+    def scalar_one(self):
         return self.value
 
 
@@ -29,6 +32,8 @@ class FakeSession:
         return False
 
     async def execute(self, statement):
+        if "servers.name" in str(statement):
+            return FakeResult("build-server")
         return FakeResult(self.job)
 
     def add(self, execution):
@@ -49,6 +54,8 @@ class QueueSession(FakeSession):
         self.results = [job, *extra_results]
 
     async def execute(self, statement):
+        if "servers.name" in str(statement):
+            return FakeResult("build-server")
         return FakeResult(self.results.pop(0))
 
 
@@ -109,8 +116,11 @@ class GitHubPollingServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.session.executions), 1)
         execution = self.session.executions[0]
         self.assertEqual(execution.trigger_source, ExecutionTriggerSource.GITHUB_POLL)
+        self.assertEqual(execution.execution_kind, ExecutionKind.JOB)
+        self.assertEqual(execution.name_snapshot, self.job.name)
         self.assertEqual(execution.trigger_commit_sha, "b" * 40)
         self.assertEqual(execution.server_id_snapshot, self.job.server_id)
+        self.assertEqual(execution.server_name_snapshot, "build-server")
         self.assertEqual(execution.script_snapshot, self.job.script)
 
     async def test_load_snapshot_resolves_shared_token(self) -> None:

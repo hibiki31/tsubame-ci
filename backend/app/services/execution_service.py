@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.models.execution import (
+    ExecutionKind,
     ExecutionStatus,
     ExecutionTriggerSource,
     JobExecution,
@@ -101,13 +102,62 @@ class ExecutionService:
         """実行時の server/script とともに実行待ちレコードを永続化する。"""
 
         job = await self.job_service.get_by_id(job_id)
+        server = await self.server_service.get_by_id(job.server_id)
+        return await self._create_pending(
+            job_id=job_id,
+            execution_kind=ExecutionKind.JOB,
+            name=job.name,
+            server_id=job.server_id,
+            server_name=server.name,
+            script=job.script,
+            trigger_source=trigger_source,
+            trigger_commit_sha=trigger_commit_sha,
+        )
+
+    async def create_ad_hoc_pending(
+        self,
+        *,
+        name: str,
+        server_id: int,
+        script: str,
+    ) -> JobExecution:
+        """単発スクリプトの実行待ちレコードを永続化する。"""
+
+        server = await self.server_service.get_by_id(server_id)
+        return await self._create_pending(
+            job_id=None,
+            execution_kind=ExecutionKind.AD_HOC,
+            name=name,
+            server_id=server_id,
+            server_name=server.name,
+            script=script,
+            trigger_source=ExecutionTriggerSource.MANUAL,
+        )
+
+    async def _create_pending(
+        self,
+        *,
+        job_id: int | None,
+        execution_kind: ExecutionKind,
+        name: str,
+        server_id: int,
+        server_name: str,
+        script: str,
+        trigger_source: ExecutionTriggerSource,
+        trigger_commit_sha: str | None = None,
+    ) -> JobExecution:
+        """実行元に依存しない実行スナップショットを作成する。"""
+
         execution = JobExecution(
             job_id=job_id,
+            execution_kind=execution_kind,
+            name_snapshot=name,
             status=ExecutionStatus.PENDING,
             trigger_source=trigger_source,
             trigger_commit_sha=trigger_commit_sha,
-            server_id_snapshot=job.server_id,
-            script_snapshot=job.script,
+            server_id_snapshot=server_id,
+            server_name_snapshot=server_name,
+            script_snapshot=script,
         )
         self.db.add(execution)
         await self.db.commit()
@@ -161,6 +211,14 @@ class ExecutionService:
 
         if execution.status == ExecutionStatus.PENDING:
             if not execution.script_snapshot or not execution.server_id_snapshot:
+                if execution.job_id is None:
+                    execution.status = ExecutionStatus.FAILED
+                    execution.finished_at = datetime.now(timezone.utc)
+                    execution.error_message = (
+                        "単発実行の再追跡に必要なスナップショットがありません"
+                    )
+                    await self.db.commit()
+                    return execution
                 job = await self.job_service.get_by_id(execution.job_id)
                 execution.script_snapshot = job.script
                 execution.server_id_snapshot = job.server_id

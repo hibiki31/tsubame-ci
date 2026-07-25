@@ -13,7 +13,11 @@ from app.schemas.server import (
     ServerMonitoringResponse,
 )
 from app.core.config import settings
-from app.services.server_service import ServerService, ServerNotFoundError
+from app.services.server_service import (
+    ServerHasActiveExecutionsError,
+    ServerNotFoundError,
+    ServerService,
+)
 from app.api.deps import get_server_service
 
 router = APIRouter()
@@ -104,6 +108,11 @@ async def delete_server(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
+        )
+    except ServerHasActiveExecutionsError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e),
         )
 
 

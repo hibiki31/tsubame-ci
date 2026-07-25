@@ -35,6 +35,7 @@ revision chain は次のとおり。
 ```text
 0001_initial_schema → 0002_server_monitoring → 0003_add_github_job_triggers
                     → 0004_resumable_remote_executions → 0005_shared_github_token
+                    → 0006_ad_hoc_executions
 ```
 
 `scripts/migrate.py` は次を判定して `head` へ移行する。

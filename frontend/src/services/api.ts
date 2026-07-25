@@ -6,7 +6,7 @@ import axios from 'axios'
 import type { 
   Server, ServerCreate, ServerUpdate, ServerTestRequest, ServerTestResponse, ServerMonitoring,
   GitHubTokenStatus, Job, JobCreate, JobUpdate, JobListItem, JobWithServer,
-  Execution, ExecutionWithJob
+  AdHocExecutionCreate, Execution, ExecutionWithJob
 } from '@/types'
 
 // axiosインスタンスの作成
@@ -137,6 +137,12 @@ export const githubTokenApi = {
 
 // 実行履歴API
 export const executionApi = {
+  // 保存済みジョブを作らない単発実行
+  async createAdHoc(data: AdHocExecutionCreate): Promise<ExecutionWithJob> {
+    const response = await apiClient.post<ExecutionWithJob>('/executions/ad-hoc', data)
+    return response.data
+  },
+
   // 実行履歴一覧取得
   async getAll(limit?: number, offset?: number): Promise<ExecutionWithJob[]> {
     const params = new URLSearchParams()
@@ -159,6 +165,12 @@ export const executionApi = {
     if (limit !== undefined) params.append('limit', limit.toString())
     
     const response = await apiClient.get<Execution[]>(`/jobs/${jobId}/executions`, { params })
+    return response.data
+  },
+
+  // 実行キャンセル要求
+  async cancel(id: number): Promise<Execution> {
+    const response = await apiClient.post<Execution>(`/executions/${id}/cancel`)
     return response.data
   }
 }

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from app.models.execution import ExecutionStatus
+from app.models.execution import ExecutionKind, ExecutionStatus
 from app.services.execution_service import ExecutionService
 from app.services.remote_execution_service import (
     RemoteExecutionSnapshot,
@@ -25,8 +25,11 @@ def execution_record(**overrides):
     values = {
         "id": 5,
         "job_id": 2,
+        "execution_kind": ExecutionKind.JOB,
+        "name_snapshot": "deploy",
         "status": ExecutionStatus.PENDING,
         "server_id_snapshot": 3,
+        "server_name_snapshot": "production",
         "script_snapshot": "echo completed",
         "remote_execution_id": None,
         "remote_process_id": None,
@@ -54,6 +57,35 @@ class ExecutionServiceTest(unittest.IsolatedAsyncioTestCase):
             refresh=AsyncMock(),
         )
         return ExecutionService(db), db
+
+    async def test_create_ad_hoc_pending_uses_shared_execution_snapshot(
+        self,
+    ) -> None:
+        added = []
+        db = SimpleNamespace(
+            add=added.append,
+            commit=AsyncMock(),
+            refresh=AsyncMock(),
+        )
+        service = ExecutionService(db)
+        service.server_service.get_by_id = AsyncMock(
+            return_value=SimpleNamespace(id=3, name="batch-server")
+        )
+
+        execution = await service.create_ad_hoc_pending(
+            name="月次集計",
+            server_id=3,
+            script="./monthly.sh",
+        )
+
+        self.assertIs(execution, added[0])
+        self.assertIsNone(execution.job_id)
+        self.assertEqual(execution.execution_kind, ExecutionKind.AD_HOC)
+        self.assertEqual(execution.name_snapshot, "月次集計")
+        self.assertEqual(execution.server_name_snapshot, "batch-server")
+        self.assertEqual(execution.script_snapshot, "./monthly.sh")
+        db.commit.assert_awaited_once_with()
+        db.refresh.assert_awaited_once_with(execution)
 
     async def test_claim_persists_remote_id_before_start(self) -> None:
         execution = execution_record()

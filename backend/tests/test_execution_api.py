@@ -4,11 +4,13 @@ from unittest.mock import AsyncMock, patch
 
 from app.api.v1.executions import (
     cancel_execution,
+    execute_ad_hoc,
     execution_runner,
     get_execution,
     list_executions,
 )
 from app.models.execution import ExecutionStatus
+from app.schemas.execution import AdHocExecutionCreateRequest
 
 
 class ExecutionApiTest(unittest.IsolatedAsyncioTestCase):
@@ -50,6 +52,30 @@ class ExecutionApiTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIs(result, execution)
         schedule.assert_called_once_with(12)
+
+    async def test_ad_hoc_execution_is_persisted_and_scheduled(self) -> None:
+        pending = SimpleNamespace(id=13)
+        loaded = SimpleNamespace(id=13, job_id=None)
+        service = AsyncMock()
+        service.create_ad_hoc_pending.return_value = pending
+        service.get_by_id.return_value = loaded
+        request = AdHocExecutionCreateRequest(
+            name="月次集計",
+            server_id=4,
+            script="./monthly.sh",
+        )
+
+        with patch.object(execution_runner, "schedule") as schedule:
+            result = await execute_ad_hoc(request, service=service)
+
+        self.assertIs(result, loaded)
+        service.create_ad_hoc_pending.assert_awaited_once_with(
+            name="月次集計",
+            server_id=4,
+            script="./monthly.sh",
+        )
+        schedule.assert_called_once_with(13)
+        service.get_by_id.assert_awaited_once_with(13, include_job=True)
 
 
 if __name__ == "__main__":

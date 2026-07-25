@@ -24,6 +24,7 @@ JenkinsのようなWEBダッシュボードを備えたCI/CDアプリケーシ�
 - ✅ SSH接続テスト
 - ✅ ジョブ定義管理（CRUD）
 - ✅ ジョブ実行機能
+- ✅ 長時間バッチ向けの単発スクリプト実行
 - ✅ 実行履歴の保存と閲覧
 - ✅ 認証情報の暗号化保存
 
@@ -109,6 +110,7 @@ uvicorn app.main:app --reload
 ### 実行履歴
 - `GET /api/v1/executions` - 実行履歴一覧
 - `POST /api/v1/executions` - ジョブ実行
+- `POST /api/v1/executions/ad-hoc` - 単発スクリプト実行
 - `GET /api/v1/executions/{id}` - 実行履歴詳細
 - `POST /api/v1/executions/{id}/cancel` - 実行キャンセル
 

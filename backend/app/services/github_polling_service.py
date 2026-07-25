@@ -13,11 +13,13 @@ from app.core.database import AsyncSessionLocal
 from app.core.security import credential_encryptor
 from app.models.github_token import GitHubToken
 from app.models.execution import (
+    ExecutionKind,
     ExecutionStatus,
     ExecutionTriggerSource,
     JobExecution,
 )
 from app.models.job import GitHubTokenSource, Job, JobTriggerType
+from app.models.server import Server
 from app.services.execution_runner import execution_runner
 from app.services.github_service import GitHubAPIError, GitHubBranchResult, GitHubService
 
@@ -209,12 +211,19 @@ class GitHubPollingService:
 
             execution = None
             if previous_sha is not None and previous_sha != current_sha:
+                server_name_result = await db.execute(
+                    select(Server.name).where(Server.id == job.server_id)
+                )
+                server_name = server_name_result.scalar_one()
                 execution = JobExecution(
                     job_id=job.id,
+                    execution_kind=ExecutionKind.JOB,
+                    name_snapshot=job.name,
                     status=ExecutionStatus.PENDING,
                     trigger_source=ExecutionTriggerSource.GITHUB_POLL,
                     trigger_commit_sha=current_sha,
                     server_id_snapshot=job.server_id,
+                    server_name_snapshot=server_name,
                     script_snapshot=job.script,
                 )
                 db.add(execution)

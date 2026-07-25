@@ -5,7 +5,12 @@
 from app.models.server import Server, AuthMethod, ServerConnectionStatus
 from app.models.job import GitHubTokenSource, Job, JobTriggerType
 from app.models.github_token import GitHubToken
-from app.models.execution import JobExecution, ExecutionStatus, ExecutionTriggerSource
+from app.models.execution import (
+    ExecutionKind,
+    ExecutionStatus,
+    ExecutionTriggerSource,
+    JobExecution,
+)
 
 __all__ = [
     "Server",
@@ -16,6 +21,7 @@ __all__ = [
     "GitHubTokenSource",
     "GitHubToken",
     "JobExecution",
+    "ExecutionKind",
     "ExecutionStatus",
     "ExecutionTriggerSource",
 ]

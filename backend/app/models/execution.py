@@ -36,6 +36,13 @@ class ExecutionTriggerSource(str, enum.Enum):
     GITHUB_POLL = "github_poll"
 
 
+class ExecutionKind(str, enum.Enum):
+    """実行定義の種類。"""
+
+    JOB = "job"
+    AD_HOC = "ad_hoc"
+
+
 class JobExecution(Base):
     """
     ジョブ実行履歴テーブル
@@ -47,10 +54,18 @@ class JobExecution(Base):
     id = Column(Integer, primary_key=True, index=True)
     job_id = Column(
         Integer,
-        ForeignKey("jobs.id", ondelete="CASCADE"),
-        nullable=False,
+        ForeignKey("jobs.id", ondelete="SET NULL"),
+        nullable=True,
         index=True,
-        comment="ジョブID"
+        comment="ジョブID（単発実行またはジョブ削除後はNULL）"
+    )
+    execution_kind = Column(
+        SQLEnum(ExecutionKind),
+        nullable=False,
+        default=ExecutionKind.JOB,
+        server_default="JOB",
+        index=True,
+        comment="登録ジョブまたは単発実行",
     )
     
     # 実行状態
@@ -71,7 +86,13 @@ class JobExecution(Base):
     trigger_commit_sha = Column(String(40), nullable=True, comment="実行契機となったcommit SHA")
 
     # 実行開始後に Job が変更されても、同じ対象と script を再追跡するための snapshot
+    name_snapshot = Column(String(255), nullable=False, comment="実行時の表示名")
     server_id_snapshot = Column(Integer, nullable=False, comment="実行開始時のサーバID")
+    server_name_snapshot = Column(
+        String(255),
+        nullable=False,
+        comment="実行開始時のサーバ名",
+    )
     script_snapshot = Column(Text, nullable=False, comment="実行開始時のスクリプト")
 
     # SSH session から分離したリモート実行の追跡情報

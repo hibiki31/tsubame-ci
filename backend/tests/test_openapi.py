@@ -44,6 +44,25 @@ class OpenAPITest(unittest.TestCase):
         self.assertIn("tracking_error", properties)
         self.assertIn("cancel_requested_at", properties)
 
+    def test_ad_hoc_execution_has_dedicated_create_contract(self) -> None:
+        schema = app.openapi()
+        operation = schema["paths"]["/api/v1/executions/ad-hoc"]["post"]
+        request_schema = operation["requestBody"]["content"][
+            "application/json"
+        ]["schema"]
+        properties = schema["components"]["schemas"][
+            "ExecutionResponse"
+        ]["properties"]
+
+        self.assertEqual(
+            request_schema["$ref"],
+            "#/components/schemas/AdHocExecutionCreateRequest",
+        )
+        self.assertIn("execution_kind", properties)
+        self.assertIn("name_snapshot", properties)
+        self.assertIn("server_name_snapshot", properties)
+        self.assertIn("script_snapshot", properties)
+
     def test_shared_github_token_response_never_exposes_token_value(self) -> None:
         schema = app.openapi()
         properties = schema["components"]["schemas"][

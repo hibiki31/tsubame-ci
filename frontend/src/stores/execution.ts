@@ -5,7 +5,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { executionApi } from '@/services/api'
-import type { ExecutionWithJob } from '@/types'
+import type { AdHocExecutionCreate, ExecutionWithJob } from '@/types'
 
 export const useExecutionStore = defineStore('execution', () => {
   // State
@@ -82,6 +82,49 @@ export const useExecutionStore = defineStore('execution', () => {
     }
   }
 
+  async function createAdHoc(data: AdHocExecutionCreate) {
+    loading.value = true
+    error.value = null
+    try {
+      const execution = await executionApi.createAdHoc(data)
+      currentExecution.value = execution
+      executions.value.unshift(execution)
+      return execution
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '単発実行の開始に失敗しました'
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function cancelExecution(id: number) {
+    error.value = null
+    try {
+      const cancelled = await executionApi.cancel(id)
+      if (currentExecution.value?.id === id) {
+        currentExecution.value = {
+          ...currentExecution.value,
+          ...cancelled,
+          job: currentExecution.value.job,
+        }
+      }
+      const index = executions.value.findIndex((execution) => execution.id === id)
+      const existing = executions.value[index]
+      if (index !== -1 && existing) {
+        executions.value[index] = {
+          ...existing,
+          ...cancelled,
+          job: existing.job,
+        }
+      }
+      return cancelled
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '実行のキャンセルに失敗しました'
+      throw err
+    }
+  }
+
   function clearError() {
     error.value = null
   }
@@ -102,6 +145,8 @@ export const useExecutionStore = defineStore('execution', () => {
     fetchExecutions,
     fetchExecution,
     fetchJobExecutions,
+    createAdHoc,
+    cancelExecution,
     clearError
   }
 })

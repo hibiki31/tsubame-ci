@@ -7,6 +7,7 @@
       description="登録リソースと直近の実行状況を、ひと目で確認できます。"
     >
       <template #actions>
+        <v-btn prepend-icon="mdi-console" to="/executions/new" variant="tonal">単発実行</v-btn>
         <v-btn color="primary" prepend-icon="mdi-play-outline" to="/jobs">ジョブを実行</v-btn>
       </template>
     </AppPageHeader>
@@ -59,11 +60,21 @@
         density="comfortable"
         hover
       >
-        <template #item.job_name="{ item }">
+        <template #item.execution_name="{ item }">
           <div class="job-cell">
-            <div class="job-cell__mark" aria-hidden="true"><v-icon icon="mdi-script-text-outline" size="17" /></div>
-            <span>{{ item.job?.name || `ジョブ #${item.job_id}` }}</span>
+            <div
+              class="job-cell__mark"
+              :class="{ 'job-cell__mark--ad-hoc': item.execution_kind === 'ad_hoc' }"
+              aria-hidden="true"
+            >
+              <v-icon :icon="item.execution_kind === 'ad_hoc' ? 'mdi-console' : 'mdi-script-text-outline'" size="17" />
+            </div>
+            <span>{{ item.name_snapshot }}</span>
           </div>
+        </template>
+
+        <template #item.execution_kind="{ item }">
+          <ExecutionKindChip :kind="item.execution_kind" />
         </template>
 
         <template #item.status="{ item }">
@@ -94,7 +105,7 @@
             class="empty-state"
             icon="mdi-history"
             title="実行履歴はまだありません"
-            text="ジョブを実行すると、ここに結果が表示されます。"
+            text="ジョブまたは単発スクリプトを実行すると、ここに結果が表示されます。"
           />
         </template>
       </v-data-table>
@@ -105,6 +116,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import AppPageHeader from '@/components/AppPageHeader.vue'
+import ExecutionKindChip from '@/components/ExecutionKindChip.vue'
 import ExecutionStatusChip from '@/components/ExecutionStatusChip.vue'
 import ExecutionTriggerChip from '@/components/ExecutionTriggerChip.vue'
 import { useServerStore } from '@/stores/server'
@@ -132,7 +144,8 @@ const metrics = computed(() => [
 ])
 
 const headers = [
-  { title: 'ジョブ', key: 'job_name' },
+  { title: '実行', key: 'execution_name' },
+  { title: '種別', key: 'execution_kind', width: 130 },
   { title: '実行方法', key: 'trigger_source', width: 120 },
   { title: 'ステータス', key: 'status', width: 150 },
   { title: '実行日時', key: 'created_at', width: 210 },
@@ -250,6 +263,11 @@ onMounted(async () => {
   color: rgb(var(--v-theme-primary));
   background: rgb(var(--v-theme-primary-soft));
   border-radius: 9px;
+}
+
+.job-cell__mark--ad-hoc {
+  color: rgb(var(--v-theme-accent));
+  background: rgba(var(--v-theme-accent), 0.1);
 }
 
 .date-cell {

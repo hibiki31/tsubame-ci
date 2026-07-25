@@ -85,7 +85,9 @@ defineProps<{
 
 .page-header__actions {
   display: flex;
+  flex-wrap: wrap;
   flex: 0 0 auto;
+  justify-content: flex-end;
   gap: 10px;
 }
 
