@@ -31,6 +31,12 @@ const router = createRouter({
       meta: { title: 'ジョブ詳細' }
     },
     {
+      path: '/executions/new',
+      name: 'ad-hoc-execution',
+      component: () => import('@/views/AdHocExecution.vue'),
+      meta: { title: '単発実行' }
+    },
+    {
       path: '/executions',
       name: 'executions',
       component: () => import('@/views/Executions.vue'),

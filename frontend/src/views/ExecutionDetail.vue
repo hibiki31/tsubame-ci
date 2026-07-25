@@ -6,7 +6,7 @@
       <AppPageHeader
         eyebrow="Execution detail"
         icon="mdi-console-line"
-        :title="execution.job?.name || `実行 #${execution.id}`"
+        :title="execution.name_snapshot"
         :description="`実行ID ${execution.id} の結果とログを表示しています。`"
       >
         <template #actions>
@@ -22,6 +22,7 @@
             <span>{{ refreshing ? '更新中' : '2秒ごとに更新' }}</span>
           </div>
           <ExecutionStatusChip :status="execution.status" />
+          <ExecutionKindChip :kind="execution.execution_kind" />
           <ExecutionTriggerChip :source="execution.trigger_source" />
           <v-btn
             aria-label="実行状態とログを更新"
@@ -31,6 +32,17 @@
             variant="text"
             @click="refreshExecution(false)"
           />
+          <v-btn
+            v-if="isActive"
+            color="error"
+            :disabled="cancelRequested"
+            prepend-icon="mdi-stop-circle-outline"
+            size="small"
+            variant="tonal"
+            @click="cancelDialog = true"
+          >
+            {{ cancelRequested ? '停止要求済み' : '停止' }}
+          </v-btn>
           <v-btn
             v-if="execution.job_id"
             prepend-icon="mdi-script-text-outline"
@@ -66,6 +78,17 @@
         <span class="tracking-alert__detail">{{ execution.tracking_error }}</span>
       </v-alert>
 
+      <v-alert
+        v-if="cancelRequested && isActive"
+        class="mb-6"
+        color="warning"
+        icon="mdi-stop-circle-outline"
+        title="停止を要求しました"
+        variant="tonal"
+      >
+        SSH接続が一時的に切れている場合も、接続復旧後にリモートプロセスの停止を再試行します。
+      </v-alert>
+
       <v-card class="panel-card execution-meta">
         <div v-for="item in metadata" :key="item.label" class="execution-meta__item">
           <div class="execution-meta__icon" aria-hidden="true"><v-icon :icon="item.icon" size="18" /></div>
@@ -74,6 +97,41 @@
             <strong :title="item.value">{{ item.value }}</strong>
           </div>
         </div>
+      </v-card>
+
+      <v-card class="panel-card script-card mt-6">
+        <v-card-title class="panel-card__header">
+          <div>
+            <div class="panel-card__title">実行スクリプト</div>
+            <div class="panel-card__subtitle">この実行に保存されたスナップショット</div>
+          </div>
+          <div class="log-card__actions">
+            <v-btn
+              :aria-expanded="scriptExpanded"
+              :append-icon="scriptExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+              size="small"
+              variant="text"
+              @click="scriptExpanded = !scriptExpanded"
+            >
+              {{ scriptExpanded ? '閉じる' : '内容を表示' }}
+            </v-btn>
+            <v-btn
+              :aria-label="copiedLog === 'script' ? '実行スクリプトをコピーしました' : '実行スクリプトをコピー'"
+              :color="copiedLog === 'script' ? 'success' : undefined"
+              :prepend-icon="copiedLog === 'script' ? 'mdi-check' : 'mdi-content-copy'"
+              size="small"
+              variant="text"
+              @click="copyLog(execution.script_snapshot, 'script')"
+            >
+              {{ copiedLog === 'script' ? 'コピー済み' : 'コピー' }}
+            </v-btn>
+          </div>
+        </v-card-title>
+        <v-expand-transition>
+          <v-card-text v-if="scriptExpanded" class="script-card__body">
+            <pre class="code-panel script-output" tabindex="0"><code>{{ execution.script_snapshot }}</code></pre>
+          </v-card-text>
+        </v-expand-transition>
       </v-card>
 
       <v-card class="panel-card log-card mt-6">
@@ -191,6 +249,32 @@
         </template>
       </v-empty-state>
     </v-card>
+
+    <v-dialog v-model="cancelDialog" max-width="500">
+      <v-card class="dialog-card">
+        <v-card-title>実行を停止しますか？</v-card-title>
+        <v-card-subtitle>対象サーバ上の実行プロセスへ安全に停止を要求します。</v-card-subtitle>
+        <v-card-text>
+          <v-alert color="warning" icon="mdi-alert-outline" variant="tonal">
+            「{{ execution?.name_snapshot }}」を停止します。通信断中は接続復旧後に停止されます。
+          </v-alert>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" :disabled="cancelling" @click="cancelDialog = false">
+            戻る
+          </v-btn>
+          <v-btn
+            color="error"
+            prepend-icon="mdi-stop-circle-outline"
+            :loading="cancelling"
+            @click="requestCancel"
+          >
+            停止を要求
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
@@ -198,6 +282,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AppPageHeader from '@/components/AppPageHeader.vue'
+import ExecutionKindChip from '@/components/ExecutionKindChip.vue'
 import ExecutionStatusChip from '@/components/ExecutionStatusChip.vue'
 import ExecutionTriggerChip from '@/components/ExecutionTriggerChip.vue'
 import { useExecutionStore } from '@/stores/execution'
@@ -208,8 +293,11 @@ const executionStore = useExecutionStore()
 const executionId = computed(() => parseInt(route.params.id as string))
 const execution = computed(() => executionStore.currentExecution)
 const loading = computed(() => executionStore.loading)
-const copiedLog = ref<'stdout' | 'stderr' | null>(null)
+const copiedLog = ref<'stdout' | 'stderr' | 'script' | null>(null)
 const refreshing = ref(false)
+const cancelling = ref(false)
+const cancelDialog = ref(false)
+const scriptExpanded = ref(false)
 const now = ref(Date.now())
 const stdoutElement = ref<HTMLElement | null>(null)
 const stderrElement = ref<HTMLElement | null>(null)
@@ -222,6 +310,7 @@ const SCROLL_END_TOLERANCE_PX = 4
 const isActive = computed(() =>
   execution.value?.status === 'running' || execution.value?.status === 'pending'
 )
+const cancelRequested = computed(() => execution.value?.cancel_requested_at != null)
 
 const displayStdout = computed(() => {
   if (execution.value?.stdout) return execution.value.stdout
@@ -267,6 +356,16 @@ const metadata = computed(() => {
   if (!execution.value) return []
   return [
     {
+      label: '実行種別',
+      value: execution.value.execution_kind === 'ad_hoc' ? '単発実行' : '登録ジョブ',
+      icon: execution.value.execution_kind === 'ad_hoc' ? 'mdi-console' : 'mdi-script-text-outline',
+    },
+    {
+      label: '実行サーバ',
+      value: execution.value.server_name_snapshot,
+      icon: 'mdi-server-outline',
+    },
+    {
       label: '開始時刻',
       value: execution.value.started_at ? formatDate(execution.value.started_at) : '未開始',
       icon: 'mdi-clock-start',
@@ -311,6 +410,11 @@ function formatDate(dateString: string): string {
 function formatDuration(seconds: number | null): string {
   if (seconds === null) return '—'
   if (seconds < 60) return `${seconds.toFixed(1)}秒`
+  if (seconds >= 3600) {
+    const hours = Math.floor(seconds / 3600)
+    const minutes = Math.floor((seconds % 3600) / 60)
+    return `${hours}時間 ${minutes}分`
+  }
   const minutes = Math.floor(seconds / 60)
   const secs = Math.floor(seconds % 60)
   return `${minutes}分 ${secs}秒`
@@ -351,7 +455,7 @@ async function resumeLogFollow(target: 'stdout' | 'stderr') {
   await scrollLogToEnd(target)
 }
 
-async function copyLog(value: string, target: 'stdout' | 'stderr') {
+async function copyLog(value: string, target: 'stdout' | 'stderr' | 'script') {
   try {
     await navigator.clipboard.writeText(value)
     copiedLog.value = target
@@ -361,6 +465,19 @@ async function copyLog(value: string, target: 'stdout' | 'stderr') {
     }, 1800)
   } catch (error) {
     console.error('ログのコピーに失敗しました:', error)
+  }
+}
+
+async function requestCancel() {
+  if (!execution.value || cancelling.value) return
+  cancelling.value = true
+  try {
+    await executionStore.cancelExecution(execution.value.id)
+    cancelDialog.value = false
+  } catch (error) {
+    console.error('実行の停止要求に失敗しました:', error)
+  } finally {
+    cancelling.value = false
   }
 }
 
@@ -386,6 +503,7 @@ function handleVisibilityChange() {
 onMounted(async () => {
   try {
     await executionStore.fetchExecution(executionId.value)
+    scriptExpanded.value = execution.value?.execution_kind === 'ad_hoc'
 
     if (isActive.value) {
       stdoutFollowing.value = true
@@ -426,7 +544,7 @@ onUnmounted(() => {
 
 .execution-meta {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   padding: 8px;
 }
 
@@ -439,11 +557,11 @@ onUnmounted(() => {
   border-right: 1px solid rgba(var(--v-border-color), 0.09);
 }
 
-.execution-meta__item:nth-child(3n) {
+.execution-meta__item:nth-child(4n) {
   border-right: 0;
 }
 
-.execution-meta__item:nth-child(-n + 3) {
+.execution-meta__item:nth-child(-n + 4) {
   border-bottom: 1px solid rgba(var(--v-border-color), 0.09);
 }
 
@@ -483,6 +601,17 @@ onUnmounted(() => {
   margin-top: 4px;
   font-size: 0.78rem;
   opacity: 0.82;
+}
+
+.script-card__body {
+  padding: 2px 24px 24px !important;
+}
+
+.script-output {
+  max-height: 420px;
+  min-height: 100px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .log-card__actions {

@@ -6,6 +6,7 @@ from typing import List
 
 from app.models.execution import ExecutionStatus
 from app.schemas.execution import (
+    AdHocExecutionCreateRequest,
     ExecutionCreateRequest,
     ExecutionResponse,
     ExecutionWithJobResponse,
@@ -13,6 +14,7 @@ from app.schemas.execution import (
 from app.services.execution_service import ExecutionService, ExecutionNotFoundError
 from app.services.execution_runner import execution_runner
 from app.services.job_service import JobNotFoundError
+from app.services.server_service import ServerNotFoundError
 from app.api.deps import get_execution_service
 
 router = APIRouter()
@@ -86,6 +88,32 @@ async def execute_job(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
         )
+
+
+@router.post(
+    "/ad-hoc",
+    response_model=ExecutionWithJobResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def execute_ad_hoc(
+    request: AdHocExecutionCreateRequest,
+    service: ExecutionService = Depends(get_execution_service),
+):
+    """保存済みジョブを作らず、単発スクリプトを非同期実行する。"""
+
+    try:
+        execution = await service.create_ad_hoc_pending(
+            name=request.name,
+            server_id=request.server_id,
+            script=request.script,
+        )
+        execution_runner.schedule(execution.id)
+        return await service.get_by_id(execution.id, include_job=True)
+    except ServerNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(error),
+        ) from error
 
 
 @router.post("/{execution_id}/cancel", response_model=ExecutionResponse)

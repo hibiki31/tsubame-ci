@@ -4,8 +4,14 @@
       eyebrow="Activity"
       icon="mdi-history"
       title="実行履歴"
-      description="ジョブの結果、所要時間、終了コードを時系列で追跡します。"
-    />
+      description="登録ジョブと単発実行の結果、所要時間、終了コードを時系列で追跡します。"
+    >
+      <template #actions>
+        <v-btn color="success" prepend-icon="mdi-console" to="/executions/new">
+          単発実行
+        </v-btn>
+      </template>
+    </AppPageHeader>
 
     <v-alert
       v-if="executionStore.error"
@@ -41,7 +47,7 @@
           clearable
           density="compact"
           hide-details
-          placeholder="ジョブ名で検索"
+          placeholder="実行名で検索"
           prepend-inner-icon="mdi-magnify"
           single-line
         />
@@ -56,11 +62,23 @@
         density="comfortable"
         hover
       >
-        <template #item.job="{ item }">
-          <router-link class="job-link" :to="`/jobs/${item.job_id}`">
+        <template #item.execution="{ item }">
+          <router-link
+            v-if="item.job_id"
+            class="execution-link"
+            :to="`/jobs/${item.job_id}`"
+          >
             <span class="job-link__icon" aria-hidden="true"><v-icon icon="mdi-script-text-outline" size="16" /></span>
-            {{ item.job?.name || `ジョブ #${item.job_id}` }}
+            {{ item.name_snapshot }}
           </router-link>
+          <div v-else class="execution-label">
+            <span class="execution-label__icon" aria-hidden="true"><v-icon icon="mdi-console" size="16" /></span>
+            {{ item.name_snapshot }}
+          </div>
+        </template>
+
+        <template #item.execution_kind="{ item }">
+          <ExecutionKindChip :kind="item.execution_kind" />
         </template>
 
         <template #item.status="{ item }">
@@ -108,8 +126,14 @@
             class="empty-state"
             icon="mdi-history"
             :title="search ? '一致する実行がありません' : '実行履歴はまだありません'"
-            :text="search ? '検索語を変えてもう一度お試しください。' : 'ジョブを実行すると、ここに結果が表示されます。'"
-          />
+            :text="search ? '検索語を変えてもう一度お試しください。' : 'ジョブまたは単発スクリプトを実行すると、ここに結果が表示されます。'"
+          >
+            <template v-if="!search" #actions>
+              <v-btn color="success" prepend-icon="mdi-console" to="/executions/new">
+                単発実行を開始
+              </v-btn>
+            </template>
+          </v-empty-state>
         </template>
       </v-data-table>
     </v-card>
@@ -119,6 +143,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import AppPageHeader from '@/components/AppPageHeader.vue'
+import ExecutionKindChip from '@/components/ExecutionKindChip.vue'
 import ExecutionStatusChip from '@/components/ExecutionStatusChip.vue'
 import ExecutionTriggerChip from '@/components/ExecutionTriggerChip.vue'
 import { useExecutionStore } from '@/stores/execution'
@@ -136,7 +161,8 @@ const summaries = computed(() => [
 ])
 
 const headers = [
-  { title: 'ジョブ', key: 'job', minWidth: 210 },
+  { title: '実行', key: 'execution', minWidth: 210 },
+  { title: '種別', key: 'execution_kind', width: 130 },
   { title: '実行方法', key: 'trigger_source', width: 120 },
   { title: 'ステータス', key: 'status', width: 150 },
   { title: '実行日時', key: 'created_at', width: 200 },
@@ -155,6 +181,11 @@ function formatDate(dateString: string): string {
 function formatDuration(seconds: number | null): string {
   if (seconds === null) return '—'
   if (seconds < 60) return `${seconds.toFixed(1)}秒`
+  if (seconds >= 3600) {
+    const hours = Math.floor(seconds / 3600)
+    const minutes = Math.floor((seconds % 3600) / 60)
+    return `${hours}時間 ${minutes}分`
+  }
   const minutes = Math.floor(seconds / 60)
   const secs = Math.floor(seconds % 60)
   return `${minutes}分 ${secs}秒`
@@ -219,24 +250,36 @@ onMounted(async () => {
   flex: 0 1 280px;
 }
 
-.job-link {
+.execution-link,
+.execution-label {
   display: inline-flex;
   align-items: center;
   gap: 9px;
+  color: rgb(var(--v-theme-on-surface));
+  font-weight: 700;
+}
+
+.execution-link {
   text-decoration: none;
 }
 
-.job-link:hover {
+.execution-link:hover {
   text-decoration: underline;
 }
 
-.job-link__icon {
+.job-link__icon,
+.execution-label__icon {
   display: grid;
   width: 30px;
   height: 30px;
   place-items: center;
   background: rgb(var(--v-theme-primary-soft));
   border-radius: 8px;
+}
+
+.execution-label__icon {
+  color: rgb(var(--v-theme-accent));
+  background: rgba(var(--v-theme-accent), 0.1);
 }
 
 .date-cell,

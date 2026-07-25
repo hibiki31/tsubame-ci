@@ -1,6 +1,6 @@
 # Project Status
 
-調査時点: 2026-07-24。静的確認、Backend unit test、Frontend production build、Alembic migration、Compose 起動と主要 HTTP endpoint を確認した。
+調査時点: 2026-07-25。静的確認、Backend unit test、Frontend production build、Alembic migration、Compose 起動と主要 HTTP endpoint を確認した。
 
 ## 現在地
 
@@ -9,15 +9,16 @@ MVP の主要部品は存在する。
 - Server の CRUD、SSH 接続テスト、認証情報の Fernet 暗号化
 - Server の定期 SSH 接続確認、online/offline 状態・応答時間・hardware/software inventory の保存と表示
 - Job の CRUD、SSH script 実行、実行結果の DB 保存
+- Jobを保存せず名前・対象サーバ・POSIX sh scriptを投入する単発実行と、登録Jobと共通の実行履歴・再追跡・ログ・cancel
 - 手動/GitHub 実行を request から分離するアプリ内 tracker、対象サーバ上の detached runner と永続ログ spool、Backend 再起動後の `running` 再追跡
 - 一時的な SSH 通信断の再接続、byte offset による stdout/stderr の欠損・重複防止、リモート PID と開始時刻を照合する cancel
 - GitHub branch の定期確認、SHA 変更時のジョブ実行、ジョブ間の共通 PAT とジョブ固有 PAT の暗号化保存・明示的な認証元選択
-- 実行履歴 API と status・stdout/stderr・所要時間の model
-- Vue/Vuetify の dashboard、Server、Job、Execution 画面
+- 実行種別と実行時の名前・サーバ・script snapshotを保持し、Job削除後も残る実行履歴 API/model
+- Vue/Vuetify の dashboard、Server、Job、単発実行、Execution 画面
 - PostgreSQL、FastAPI、Vue/Nginx の Compose 構成
-- Alembic の初期 schema、サーバ監視、GitHub trigger、共有 GitHub PAT migration
+- Alembic の初期 schema、サーバ監視、GitHub trigger、共有 GitHub PAT、単発実行 migration
 
-Python compile、Backend unit test、Frontend production build は成功した。空 DB と Alembic 未導入の旧 MVP DB の migration、Compose 上の Backend health・Jobs API・Frontend・Nginx proxy も確認した。共有 GitHub PAT migration は空 DB と `0004` DB で適用し、既存の固有 PAT がジョブ固有認証へ引き継がれることを確認した。detached runner、UTF-8 chunk、offset 競合、再投入、SSH 再試行は unit test で確認したが、実 SSH server を使った Backend 再起動・通信断から画面までの End-to-End test は未実施である。
+Python compile、Backend unit test、Frontend production build は成功した。空 DB と Alembic 未導入の旧 MVP DB の migration、Compose 上の Backend health・Jobs API・Frontend・Nginx proxy も確認した。単発実行 migration は空 DB と既存履歴入り `0005` DB で適用し、snapshot の backfill と Job 削除後の履歴保持を確認した。detached runner、UTF-8 chunk、offset 競合、再投入、SSH 再試行は unit test で確認したが、実 SSH server を使った Backend 再起動・通信断から画面までの End-to-End test は未実施である。
 
 ## 既知課題
 

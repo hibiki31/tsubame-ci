@@ -140,10 +140,16 @@ export interface GitHubTokenStatus {
 // 実行履歴関連の型
 export type ExecutionStatus = 'pending' | 'running' | 'success' | 'failed' | 'timeout' | 'cancelled'
 export type ExecutionTriggerSource = 'manual' | 'github_poll'
+export type ExecutionKind = 'job' | 'ad_hoc'
 
 export interface Execution {
   id: number
-  job_id: number
+  job_id: number | null
+  execution_kind: ExecutionKind
+  name_snapshot: string
+  server_id_snapshot: number
+  server_name_snapshot: string
+  script_snapshot: string
   status: ExecutionStatus
   trigger_source: ExecutionTriggerSource
   trigger_commit_sha: string | null
@@ -169,7 +175,13 @@ export interface ExecutionJobSummary {
 }
 
 export interface ExecutionWithJob extends Execution {
-  job: ExecutionJobSummary
+  job: ExecutionJobSummary | null
+}
+
+export interface AdHocExecutionCreate {
+  name: string
+  server_id: number
+  script: string
 }
 
 // API レスポンス型

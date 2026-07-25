@@ -3,7 +3,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from app.models.server import ServerConnectionStatus
-from app.services.server_service import ServerService
+from app.services.server_service import (
+    ServerHasActiveExecutionsError,
+    ServerService,
+)
 from app.services.ssh_service import ServerInspectionResult, SSHConnectionError
 
 
@@ -53,6 +56,17 @@ class ServerServiceMonitoringTest(unittest.IsolatedAsyncioTestCase):
         self.assertIs(self.server.hardware_info, previous_hardware)
         self.assertIs(self.server.software_info, previous_software)
         self.db.commit.assert_awaited_once_with()
+
+    async def test_delete_rejects_server_with_active_execution(self) -> None:
+        self.db.execute.return_value = SimpleNamespace(
+            scalar_one_or_none=lambda: 42,
+        )
+
+        with self.assertRaises(ServerHasActiveExecutionsError):
+            await self.service.delete(12)
+
+        self.db.delete.assert_not_awaited()
+        self.db.commit.assert_not_awaited()
 
 
 if __name__ == "__main__":

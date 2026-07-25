@@ -7,6 +7,7 @@ from sqlalchemy import select
 from typing import List, Optional
 from datetime import datetime, timezone
 
+from app.models.execution import ExecutionStatus, JobExecution
 from app.models.server import Server, AuthMethod, ServerConnectionStatus
 from app.schemas.server import ServerCreate, ServerUpdate
 from app.core.security import credential_encryptor
@@ -16,6 +17,10 @@ from app.services.ssh_service import ssh_service
 class ServerNotFoundError(Exception):
     """サーバが見つからない"""
     pass
+
+
+class ServerHasActiveExecutionsError(Exception):
+    """実行待ちまたは実行中の履歴が参照している。"""
 
 
 class ServerService:
@@ -146,7 +151,22 @@ class ServerService:
             ServerNotFoundError: サーバが見つからない
         """
         server = await self.get_by_id(server_id)
-        
+
+        active_result = await self.db.execute(
+            select(JobExecution.id)
+            .where(
+                JobExecution.server_id_snapshot == server_id,
+                JobExecution.status.in_(
+                    [ExecutionStatus.PENDING, ExecutionStatus.RUNNING]
+                ),
+            )
+            .limit(1)
+        )
+        if active_result.scalar_one_or_none() is not None:
+            raise ServerHasActiveExecutionsError(
+                "実行待ちまたは実行中の履歴があるためサーバを削除できません"
+            )
+
         await self.db.delete(server)
         await self.db.commit()
     
