@@ -11,6 +11,8 @@ docker compose logs -f backend frontend
 - UI: `http://localhost:30682`
 - API / OpenAPI UI: `http://localhost:8000` / `http://localhost:8000/docs`
 - Backend container は起動前に `python scripts/migrate.py` を実行する。
+- 全 container は `restart: unless-stopped` により、Docker daemon 起動時と異常終了時に自動再起動する。ホスト OS 側でも Docker daemon の自動起動を有効にしておく。
+- 明示的に停止した状態はホスト再起動後も維持される。自動起動へ戻す場合は `docker compose up -d` を実行する。
 - `compose.yml` の値は開発用である。本番では secret、DB credential、CORS、Debug を必ず差し替える。
 - service に固定 `container_name` があるため、既存環境や別 worktree と併用する前に衝突を確認する。
 

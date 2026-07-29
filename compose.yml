@@ -3,6 +3,7 @@ services:
   db:
     image: postgres:15-alpine
     container_name: tsubame-ci-db
+    restart: unless-stopped
     environment:
       POSTGRES_DB: tsubame_ci
       POSTGRES_USER: tsubame
@@ -25,6 +26,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: tsubame-ci-backend
+    restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+asyncpg://tsubame:tsubame@db:5432/tsubame_ci
       SECRET_KEY: dev-secret-key-change-in-production
@@ -53,6 +55,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: tsubame-ci-frontend
+    restart: unless-stopped
     ports:
       - "30682:80"
     depends_on:
