@@ -502,7 +502,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import AppPageHeader from '@/components/AppPageHeader.vue'
 import ExecutionStatusChip from '@/components/ExecutionStatusChip.vue'
@@ -559,6 +559,7 @@ const formRef = ref()
 const sharedTokenFormRef = ref()
 const currentJobId = ref<number | null>(null)
 const currentJobTokenConfigured = ref(false)
+const currentTime = ref(Date.now())
 const sharedTokenValue = ref('')
 const sharedTokenStatus = ref<GitHubTokenStatus>({
   configured: false,
@@ -576,6 +577,8 @@ const form = ref<JobForm>({
   github_token_source: 'none',
   github_token: '',
 })
+
+let relativeTimeTimer: number | undefined
 
 const serverOptions = computed(() => servers.value.map((server) => ({ title: server.name, value: server.id })))
 const sharedTokenJobCount = computed(() =>
@@ -636,7 +639,27 @@ function formatDateTime(dateString: string): string {
 }
 
 function formatBuildDate(dateString: string): string {
-  return formatDateTime(dateString)
+  const elapsedSeconds = Math.max(
+    0,
+    Math.floor((currentTime.value - new Date(dateString).getTime()) / 1000),
+  )
+
+  let relativeTime: string
+  if (elapsedSeconds < 60) {
+    relativeTime = `${elapsedSeconds}秒前`
+  } else if (elapsedSeconds < 3600) {
+    relativeTime = `${Math.floor(elapsedSeconds / 60)}分前`
+  } else if (elapsedSeconds < 86400) {
+    relativeTime = `${Math.floor(elapsedSeconds / 3600)}時間前`
+  } else if (elapsedSeconds < 2592000) {
+    relativeTime = `${Math.floor(elapsedSeconds / 86400)}日前`
+  } else if (elapsedSeconds < 31536000) {
+    relativeTime = `${Math.floor(elapsedSeconds / 2592000)}か月前`
+  } else {
+    relativeTime = `${Math.floor(elapsedSeconds / 31536000)}年前`
+  }
+
+  return `${formatDateTime(dateString)}（${relativeTime}）`
 }
 
 function formatTokenSource(job: Job): string {
@@ -847,6 +870,10 @@ async function confirmExecute() {
 }
 
 onMounted(async () => {
+  relativeTimeTimer = window.setInterval(() => {
+    currentTime.value = Date.now()
+  }, 1000)
+
   const results = await Promise.allSettled([
     serverStore.fetchServers(),
     jobStore.fetchJobs(),
@@ -857,6 +884,10 @@ onMounted(async () => {
       console.error('データの取得に失敗しました:', result.reason)
     }
   }
+})
+
+onBeforeUnmount(() => {
+  if (relativeTimeTimer !== undefined) window.clearInterval(relativeTimeTimer)
 })
 </script>
 
